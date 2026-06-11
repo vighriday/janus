@@ -27,5 +27,29 @@ Notable changes, newest first. Dates are when the work landed.
 - Initialized the repo and the working tree (`api`, `web`, `infra`, `data`,
   `fixtures`).
 
-_Remaining Phase 0: synthetic corpus, backend skeleton, docker-compose, the
-end-to-end SSE smoke test._
+- Wrote the synthetic corpus: the Northwind Logistics vendor-consolidation
+  precedent thread (kickoff, risk note, outage postmortem, policy) plus a
+  spend-history CSV and fifteen unrelated decision documents as realistic
+  retrieval noise.
+- Stood up the backend skeleton: FastAPI app, the domain models (a lesson can't
+  exist without a citation), the stream-event contract, and a smoke endpoint that
+  streams a placeholder run end to end. Verified the SSE wire to a client.
+
+### Component re-audit — 2026-06-11
+
+Re-checked every component against the current field before building further.
+Five changed:
+
+- Decision graph moved from Neo4j to an in-process NetworkX graph with NumPy
+  cosine — at ~40 nodes a graph server is pure friction, so this removes a Docker
+  service entirely. Tore down the Neo4j container and image.
+- Added a thin DoWhy causal layer to the simulation for real `do()` futures.
+- Folded red-teaming into `azure-ai-evaluation[redteam]`; added DeepEval as an
+  offline fallback.
+- Dropped Static Web Apps — the frontend will deploy as a second container app.
+- Added a local Arize Phoenix trace UI alongside App Insights.
+
+Updated dependencies and re-locked. Orchestration (Agent Framework) and the
+frontend stack were confirmed unchanged.
+
+_Remaining Phase 0: the frontend skeleton and the full local stack bring-up._

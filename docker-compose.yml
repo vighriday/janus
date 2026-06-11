@@ -1,0 +1,45 @@
+# Local development stack for JANUS.
+# The decision graph runs in-process (NetworkX) — no graph server here.
+# Azure services (Foundry IQ retrieval, Content Safety) are reached from the API
+# using your `az login` credential; they are not containerized.
+
+services:
+  # Local trace UI. The API exports OpenTelemetry spans here so the full
+  # retrieval -> lesson -> citation reasoning chain is visible during the demo.
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: janus-phoenix
+    ports:
+      - "6006:6006"   # UI + OTLP HTTP
+      - "4317:4317"   # OTLP gRPC
+    environment:
+      PHOENIX_WORKING_DIR: /data
+    volumes:
+      - ./phoenix/data:/data
+
+  api:
+    build: ./api
+    container_name: janus-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      PHOENIX_COLLECTOR_ENDPOINT: "http://phoenix:6006"
+    depends_on:
+      - phoenix
+    # The API authenticates to Azure with DefaultAzureCredential. For the local
+    # demo we run it on the host (uv run) so it picks up `az login`; this service
+    # is here for the full containerized path.
+    profiles: ["full"]
+
+  web:
+    build: ./web
+    container_name: janus-web
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000"
+    depends_on:
+      - api
+    profiles: ["full"]

@@ -26,10 +26,7 @@ class Settings(BaseSettings):
     # Content Safety
     azure_content_safety_endpoint: str = ""
 
-    # Neo4j
-    neo4j_uri: str = "bolt://localhost:7687"
-    neo4j_user: str = "neo4j"
-    neo4j_password: str = "januslocaldev"
+    # Graph is in-process (NetworkX) — no server, no connection config.
 
     # Behaviour
     reranker_threshold: float = 2.5

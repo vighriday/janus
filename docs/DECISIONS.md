@@ -1,7 +1,56 @@
 # Decision log
 
 Short records of the choices that shaped JANUS and, just as importantly, the
-things we decided *not* to build. Newest at the top.
+things we decided _not_ to build. Newest at the top.
+
+---
+
+### Re-audited every component against the full field; five changed
+
+Before committing to the build we re-checked each component against the current
+field of alternatives rather than trusting the first pick. Seven components, each
+surveyed wide and then challenged by a second reviewer. Five changed.
+
+- **Graph: Neo4j → NetworkX (in-process).** This is the big one. The graph is
+  ~40 hand-curated nodes. The only technical reason to run a graph server is the
+  vector index — and at 40 vectors a brute-force cosine in NumPy is exact and
+  sub-millisecond, so the index earns nothing. That left Neo4j contributing only
+  a JVM container, a startup health-gate, and a demo-day failure surface. An
+  in-process NetworkX typed graph gives the same typed nodes, typed edges, and
+  traversal, serializes straight to the React Flow render, and adds no service. A
+  thin `GraphStore` interface keeps a server swap one class away if scale ever
+  changed. (Kuzu, the embedded-Cypher option, was eliminated — archived October
+  2025; its forks are all under a year old. Memgraph is healthy but still a
+  server we don't need.)
+- **Simulation: add a thin DoWhy causal layer.** The seeded Monte Carlo stays,
+  but we add a small DoWhy graphical-causal-model step so the three futures come
+  from literal `do()` interventions on the lever graph — earning the word
+  "counterfactual" rather than implying it. SALib's global sensitivity moves to
+  an optional offline panel, off the live path.
+- **Safety: fold red-teaming into the eval package.** Standalone PyRIT becomes
+  `azure-ai-evaluation[redteam]` (the AI Red Teaming Agent wraps PyRIT) — one
+  Azure-native package instead of two tools. DeepEval added as an offline
+  fallback scorer. The Foundry project is pinned to East US 2 because the
+  groundedness and red-team previews are region-locked.
+- **Infra: drop Static Web Apps.** Host the Next.js frontend as a second
+  container app in the same `azd` environment as the API. One deploy target, one
+  identity model, fewer moving parts, and no question about Vercel's
+  non-commercial terms on a public repo.
+- **Observability: add a local trace UI.** App Insights stays as the
+  Azure-native sink but has a 1–3 minute ingestion lag — too slow to show live.
+  A parallel OpenTelemetry exporter to a local Arize Phoenix container gives an
+  on-camera trace UI, with OpenInference instrumentation so the LLM steps render
+  richly.
+
+Confirmed unchanged after the audit: **Microsoft Agent Framework** for
+orchestration (it uniquely ships a first-party Foundry IQ bridge — the audit
+actually strengthened this pick) and the **Next.js + AI Elements + React Flow +
+Recharts** frontend.
+
+The biggest residual risk surfaced by the audit: the Foundry IQ bridge package
+is pre-release, and the mandatory IQ integration rides on it. Pin it exactly,
+smoke-test the citation path on day one, keep the raw-SDK adapter as a fallback,
+and do not upgrade it once it's green.
 
 ---
 

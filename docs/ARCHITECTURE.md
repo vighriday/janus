@@ -56,15 +56,20 @@ and the reasoning visible.
 
 ## 2. The chosen stack
 
+_Every choice below was re-audited against the full field of current alternatives
+(see `docs/DECISIONS.md`). Five components changed in that audit; those rows are
+marked ‡._
+
 | Layer | Choice | Pinned | Closest alternative (and why not) |
 |-------|--------|--------|-----------------------------------|
-| Orchestration | Microsoft Agent Framework, Workflows graph API; FoundryChatClient executors | `agent-framework==1.8.1` | LangGraph 1.0 — more battle-tested for pure graphs, but third-party; demotes Foundry to a bolt-on and forfeits native-judge appeal |
-| Retrieval (the IQ layer) | Foundry IQ knowledge base on Azure AI Search agentic retrieval, 2026-05-01-preview retrieve action | pinned `--pre azure-search-documents` build | Hand-rolled hybrid pipeline — loses the mandatory-IQ point and wastes the timebox |
-| Decision graph | Neo4j Community (Docker) + neo4j-graphrag-python VectorCypherRetriever | `neo4j:2026.05.0` | Memgraph (genuine drop-in fallback); Kuzu (archived Oct 2025 — do not use); Cosmos Gremlin (soft-deprecated) |
-| Simulation | LLM emits levers only + deterministic NumPy Monte Carlo, SciPy triangular, SALib Sobol | NumPy 2.4.x, SciPy 1.17, SALib 1.5.2 | PyMC Bayesian — more rigorous, heavier; sampler tuning is a 3-day risk. Roadmap. |
-| Frontend | Next.js 15 + shadcn/ui + Vercel AI Elements (AI SDK 6) + React Flow 12 + Recharts v3 | AI SDK 6 GA, `@xyflow/react` 12.11 | assistant-ui — strong, but AI Elements ships the citation/chain-of-thought/tool components we need out of the box |
-| Safety + eval | Content Safety Groundedness Detection + Prompt Shields + azure-ai-evaluation + local PyRIT red-team | `azure-ai-evaluation==1.17.0` | Ragas/Phoenix/Langfuse — kept Ragas as a cheap second judge only; not the spine |
-| Backend / infra | FastAPI + Pydantic v2 + uv; azd → Container Apps + Static Web Apps; Key Vault + managed identity | FastAPI 0.136.x, uv 0.11.x | Litestar — faster microbenchmarks, thinner ecosystem, no Foundry samples |
+| Orchestration | Microsoft Agent Framework, Workflows graph API; FoundryChatClient executors; first-party `agent-framework-azure-ai-search` Foundry bridge | `agent-framework==1.8.x`, bridge pinned `--pre` | LangGraph 1.2 — co-equal on graphs/HITL, but third-party with no Foundry bridge; demotes Foundry to a bolt-on |
+| Retrieval (the IQ layer) | Foundry IQ knowledge base on Azure AI Search agentic retrieval, 2026-05-01-preview retrieve action | pinned `--pre azure-search-documents` build | Hand-rolled hybrid pipeline — loses the mandatory-IQ point. Kept as the fallback adapter behind the retrieval interface. |
+| Decision graph ‡ | **NetworkX in-process typed DiGraph + NumPy brute-force cosine** | `networkx>=3.4` | Neo4j/Memgraph — a graph server earns nothing at 40 nodes (brute-force cosine is exact and sub-ms); pure setup friction + a demo-failure surface. Kuzu archived Oct 2025. Thin `GraphStore` interface keeps a server swap one class away. |
+| Simulation ‡ | LLM emits levers only + deterministic NumPy Monte Carlo, SciPy triangular; thin **DoWhy GCM** for literal `do()` counterfactuals | NumPy 2.x, SciPy 1.15, DoWhy 0.12+ | SALib Sobol kept as an optional offline panel, off the live path; PyMC Bayesian is roadmap |
+| Frontend | Next.js 15 + shadcn/ui + Vercel AI Elements (AI SDK 6) + React Flow 12 + Recharts v3 | AI SDK 6 GA, `@xyflow/react` 12.11 | assistant-ui — strong, but AI Elements ships the citation/chain-of-thought/tool components we need out of the box. Tremor excluded; Recharts is the sole chart lib. |
+| Safety + eval ‡ | Content Safety Groundedness + Prompt Shields + **azure-ai-evaluation `[redteam]`** (wraps PyRIT) + Ragas + DeepEval fallback | `azure-ai-evaluation>=1.17` | Standalone PyRIT folded into the eval package; NeMo/Guardrails-AI lose the Azure-native narrative. Foundry project pinned to East US 2 (region-locked previews). |
+| Backend / infra ‡ | FastAPI + Pydantic v2 + uv; azd → Container Apps hosting **both** services; Key Vault + managed identity | FastAPI 0.136.x, uv 0.7.x | Static Web Apps dropped — hosting the frontend as a second container app means one deploy target, one identity model, and no Vercel-ToS question |
+| Observability ‡ | OpenTelemetry, dual sink: Azure Monitor/App Insights + local **Arize Phoenix** trace UI | `arize-phoenix-otel`, `openinference-instrumentation-openai` | App Insights alone has 1–3 min ingestion lag — too slow for a live demo; Phoenix is the on-camera trace UI, App Insights the cited production sink |
 
 ## 3. Why these, specifically
 

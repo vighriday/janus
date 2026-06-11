@@ -23,13 +23,19 @@ code, and stand up a skeleton that already streams end to end.
       before building — these are region-gated and don't co-locate everywhere.
 - [ ] Provision Azure AI Search (Basic tier — Free has no managed identity for
       the search service to call the model). Set `knowledgeRetrieval=standard`.
-- [ ] Lock dependencies: `agent-framework==1.8.1`, the tested `--pre`
-      `azure-search-documents`, `neo4j-graphrag-python` (SEARCH-clause release),
-      AI SDK 6, React Flow 12, `uv` 0.11.x. Commit the lockfiles.
-- [ ] Neo4j 2026.05.0 in Docker. Smoke-test the exact VectorCypherRetriever
-      SEARCH-clause query against it — confirm no deprecated `queryNodes`.
+- [ ] Lock dependencies: `agent-framework==1.8.x`, the tested `--pre`
+      `azure-search-documents` + `agent-framework-azure-ai-search`, AI SDK 6,
+      React Flow 12, `networkx`, `dowhy`, `azure-ai-evaluation[redteam]`. Commit
+      the lockfile. Smoke-test the full import graph so any version pressure
+      surfaces on day 1.
+- [ ] Smoke-test the Foundry IQ bridge (`AzureAISearchContextProvider`) citation
+      path end to end. Keep the raw `azure-search-documents` adapter behind the
+      retrieval interface as the fallback.
+- [ ] Graph is in-process (NetworkX) — no server to stand up. Confirm the typed
+      DiGraph + NumPy cosine + `node_link_data` → React Flow path works.
 - [ ] Repo: push protection on, Key Vault + user-assigned managed identity,
-      `docker compose` for api + web + neo4j, `.env.example` with empty keys.
+      `docker compose` for the API, frontend, and the local Phoenix trace UI,
+      `.env.example` with empty keys.
 - [ ] Hello-world SSE: FastAPI streams a custom data part, Next.js `useChat`
       renders it. This is the pipe everything else flows through.
 - [ ] Author ~30 synthetic decision docs (transcripts, postmortems, policies,
@@ -50,8 +56,8 @@ Goal: prove the mandatory integration and the riskiest axis on day 1.
 - [ ] Prompt Shields + Groundedness Detection wired and returning real verdicts.
 - [ ] Run the `azure-ai-evaluation` harness once over the test set; commit the
       scorecard JSON.
-- [ ] Seed Neo4j with the decision → outcome → principle graph; confirm
-      VectorCypherRetriever returns real paths from cited docKeys.
+- [ ] Build the in-process decision graph (decision → outcome → principle) from
+      the corpus; confirm traversal returns real paths from cited doc ids.
 
 Exit: retrieval is real and on screen; the safety verdicts are real; the
 scorecard exists in the repo.
