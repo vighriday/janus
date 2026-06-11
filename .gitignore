@@ -1,0 +1,62 @@
+# --- secrets / environment ---
+.env
+.env.*
+!.env.example
+*.local
+secrets/
+*.pem
+*.key
+
+# --- python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.uv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- node / next.js ---
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+.vercel/
+
+# --- azure / iac ---
+.azure/
+azd.env
+*.azurePubxml
+
+# --- docker ---
+# (compose file is committed; local volumes are not)
+neo4j/data/
+neo4j/logs/
+
+# --- editors / os ---
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- local artifacts ---
+*.log
+tmp/
+.cache/
+
+# --- tooling / harness state (never publish) ---
+.claude/
+.veris/
+
+# --- internal scratch, not repo artifacts ---
+/content.txt
+/Agents-League-AISF-Regulations/
+/idea.txt

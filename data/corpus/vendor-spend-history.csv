@@ -1,0 +1,7 @@
+doc_id,doc_type,synthetic,company,fiscal_year,vendor,flow,annual_spend_usd,volume_share_pct,unit_cost_index,contract_end
+NW-FIN-201,financials,true,Northwind Logistics (fictional),2022,Tessell,carrier_routing,2010000,55,1.00,2025-06-30
+NW-FIN-201,financials,true,Northwind Logistics (fictional),2022,Carrowind,carrier_routing,1180000,30,1.07,2024-09-30
+NW-FIN-201,financials,true,Northwind Logistics (fictional),2022,Halberd Systems,carrier_routing,640000,15,1.12,2024-03-31
+NW-FIN-201,financials,true,Northwind Logistics (fictional),2023,Tessell,carrier_routing,3360000,100,0.92,2026-06-30
+NW-FIN-201,financials,true,Northwind Logistics (fictional),2024,Tessell,carrier_routing,2520000,72,0.94,2026-06-30
+NW-FIN-201,financials,true,Northwind Logistics (fictional),2024,Carrowind,carrier_routing,980000,28,1.05,2027-09-30
