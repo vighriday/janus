@@ -18,6 +18,11 @@ from janus import __version__
 from janus.models import ProposedAction, StepKind, StepStatus, StreamEvent
 from janus.pipeline.core import run_janus_pipeline
 from janus.pipeline.workflow import run_workflow_pipeline
+from janus.telemetry import setup_telemetry
+
+# Install the OpenTelemetry tracer + exporters at import. No-op when no collector
+# is configured, so this is safe in every environment including tests.
+setup_telemetry()
 
 app = FastAPI(title="JANUS", version=__version__)
 

@@ -1,19 +1,19 @@
 # Decision log
 
 Short records of the choices that shaped JANUS and, just as importantly, the
-things we decided _not_ to build. Newest at the top.
+things we decided *not* to build. Newest at the top.
 
 ---
 
-### Re-audited every component against the full field; five changed
+## Re-audited every component against the full field; five changed
 
 Before committing to the build we re-checked each component against the current
 field of alternatives rather than trusting the first pick. Seven components, each
 surveyed wide and then challenged by a second reviewer. Five changed.
 
 - **Graph: Neo4j → NetworkX (in-process).** This is the big one. The graph is
-  ~40 hand-curated nodes. The only technical reason to run a graph server is the
-  vector index — and at 40 vectors a brute-force cosine in NumPy is exact and
+  ~19 hand-curated nodes. The only technical reason to run a graph server is the
+  vector index — and at that scale a brute-force cosine in NumPy is exact and
   sub-millisecond, so the index earns nothing. That left Neo4j contributing only
   a JVM container, a startup health-gate, and a demo-day failure surface. An
   in-process NetworkX typed graph gives the same typed nodes, typed edges, and
@@ -24,33 +24,38 @@ surveyed wide and then challenged by a second reviewer. Five changed.
   server we don't need.)
 - **Simulation: add a thin DoWhy causal layer.** The seeded Monte Carlo stays,
   but we add a small DoWhy graphical-causal-model step so the three futures come
-  from literal `do()` interventions on the lever graph — earning the word
-  "counterfactual" rather than implying it. SALib's global sensitivity moves to
-  an optional offline panel, off the live path.
-- **Safety: fold red-teaming into the eval package.** Standalone PyRIT becomes
-  `azure-ai-evaluation[redteam]` (the AI Red Teaming Agent wraps PyRIT) — one
-  Azure-native package instead of two tools. DeepEval added as an offline
-  fallback scorer. The Foundry project is pinned to East US 2 because the
-  groundedness and red-team previews are region-locked.
-- **Infra: drop Static Web Apps.** Host the Next.js frontend as a second
-  container app in the same `azd` environment as the API. One deploy target, one
-  identity model, fewer moving parts, and no question about Vercel's
-  non-commercial terms on a public repo.
-- **Observability: add a local trace UI.** App Insights stays as the
-  Azure-native sink but has a 1–3 minute ingestion lag — too slow to show live.
-  A parallel OpenTelemetry exporter to a local Arize Phoenix container gives an
-  on-camera trace UI, with OpenInference instrumentation so the LLM steps render
-  richly.
+  from a literal `do()` intervention on the lever graph — earning the word
+  "counterfactual" rather than implying it. (A SALib Sobol offline sensitivity
+  panel was considered and cut to keep the live path and the dependency tree
+  lean.)
+- **Safety: keep one Azure-native spine.** Content Safety groundedness + Prompt
+  Shields on the live path; the offline scorecard uses the same Content-Safety-
+  aligned groundedness via `azure-ai-evaluation`. Red-teaming (AI Red Teaming
+  Agent / PyRIT) is roadmap — it needs a cloud Foundry project and risks a
+  dependency clash with the agent stack, so it's planned, not on the live path.
+- **Infra: drop Static Web Apps.** Host the Next.js console as a second container
+  app in the same `azd` environment as the API. One deploy target, one identity
+  model, fewer moving parts, and no question about Vercel's non-commercial terms
+  on a public repo.
+- **Observability: dual OpenTelemetry sink.** A local Arize Phoenix exporter gives
+  an on-camera trace UI (App Insights has a 1–3 min ingestion lag, too slow to
+  show live); Azure Monitor / App Insights is the production sink. OpenAI is
+  auto-instrumented via OpenInference. Both sinks are optional — no collector
+  configured means spans are recorded but not shipped, so the app runs identically
+  with or without one.
 
 Confirmed unchanged after the audit: **Microsoft Agent Framework** for
-orchestration (it uniquely ships a first-party Foundry IQ bridge — the audit
-actually strengthened this pick) and the **Next.js + AI Elements + React Flow +
-Recharts** frontend.
+orchestration. Note: the `agent-framework-azure-ai-search` Foundry bridge turned
+out not to expose the activity/citation detail, so the retrieval path is the raw
+`KnowledgeBaseRetrievalClient`; the bridge survives only as a version pin. The
+frontend is **Next.js + React Flow + hand-built SVG** (a charting library and AI
+Elements were both dropped once the panels were hand-built — fewer dependencies,
+and the hand-drawn charts render an outcome range that crosses zero).
 
-The biggest residual risk surfaced by the audit: the Foundry IQ bridge package
-is pre-release, and the mandatory IQ integration rides on it. Pin it exactly,
-smoke-test the citation path on day one, keep the raw-SDK adapter as a fallback,
-and do not upgrade it once it's green.
+The biggest residual risk surfaced by the audit: the agentic-retrieve API is
+pre-release, and the mandatory IQ integration rides on it. Pin the SDK,
+smoke-test the citation path on day one, and capture a real response as a replay
+fixture for the demo.
 
 ---
 
@@ -91,47 +96,53 @@ into the Agent Framework; using them directly would signal we missed that.
 ### The simulation computes its own numbers
 
 Hand-authored figures are the number-one tell of a faked agent demo. So the model
-only proposes levers; a seeded deterministic Monte Carlo over a transparent cost
-model computes everything. Same inputs reproduce the same output, changing an
-input provably moves it, and a sensitivity tornado shows which input drives the
-spread. We cite the paper that inspired this as *inspiration only* — its own model
-has the LLM emit the values, which is not what we do, and a judge who opens the
-PDF would catch an overclaim. The reproducible seed and run manifest are the real
-proof.
+only proposes bounded levers; a seeded deterministic Monte Carlo over a transparent
+cost model computes everything. Same inputs reproduce the same output, and moving
+the dependency lever provably moves the result across the concentration knee. That
+lever is the action's actual parameter (operator-set), not an LLM output, so the
+flip is a real causal response. The reproducible seed and run manifest are the
+proof. A DoWhy `do()` intervention adds the literal counterfactual contrast.
 
-### Neo4j for the decision graph, kept small
+### Decision graph: in-process NetworkX, not a graph server
 
-A typed graph of 20–40 curated nodes, queried at action time and rendered live.
-Neo4j is credible to this judge pool, has a native vector index, and a first-party
-GraphRAG retriever that does exactly our embed-then-traverse move. It does not
-overlap Foundry IQ — IQ retrieves prose, the graph holds causal structure. All
-vector queries use the current SEARCH clause; the older procedures were deprecated
-and would look dated. Memgraph is a genuine drop-in fallback. Kuzu was archived in
-late 2025 — ruled out. Cosmos Gremlin is soft-deprecated — ruled out.
+After the re-audit (top of this log) the graph moved from Neo4j to an in-process
+NetworkX `DiGraph`. At ~19 curated nodes a graph server earns nothing — the only
+technical pull was a vector index, and brute-force cosine over that many vectors is
+exact and sub-millisecond. Neo4j would have contributed a JVM container, a
+startup health-gate, and a demo-day failure surface and nothing else. The graph
+holds the decision→outcome→principle structure that flat retrieval can't express
+(IQ retrieves prose; the graph holds the links), loaded from the corpus
+frontmatter and rendered straight into React Flow. A `GraphStore` seam keeps a
+server swap one class away if scale ever changed.
 
-### Frontend: Next.js + Vercel AI Elements
+### Frontend: Next.js + React Flow + hand-built SVG
 
-AI Elements ships the exact components we need — chain-of-thought, tool calls,
-source citations — on top of shadcn/ui, bound to an SSE stream from the Python
-backend. It reads as native and saves days. React Flow renders the graph; Recharts
-renders the bands.
+The console binds to an SSE stream of typed step events from the Python backend —
+no Node agent loop, one source of run state. Panels are built on Tailwind v4, with
+React Flow for the precedent graph and hand-drawn SVG for the outcome bands and the
+trust gauge. A charting library (and Vercel AI Elements) were both dropped once the
+panels were hand-built: fewer dependencies, and the hand-drawn band chart renders
+an outcome range that crosses zero — which a stacked bar can't.
 
-### Safety: one Microsoft-native spine, all GA
+### Safety: one Microsoft-native spine
 
-Content Safety groundedness (reasoning mode) drives abstention; prompt shields
+Content Safety groundedness drives abstention (binary mode today; segment-level
+reasoning mode is roadmap, gated by a model-deprecation issue); Prompt Shields
 screen the action *and* the retrieved docs; the offline eval harness uses the same
-groundedness service so the scorecard predicts live behavior. A local red-team
-scan produces an attack-success-rate slide — we attack our own guardrail because an
-unaudited one is a red flag. We added Ragas as a cheap second grounding judge and
-cut Phoenix/Langfuse (Azure Monitor already covers tracing).
+Content-Safety-aligned groundedness so the scorecard predicts live behaviour. A
+red-team attack-success-rate artifact is roadmap — an unaudited guardrail is a red
+flag, so it's planned, but it needs a cloud Foundry project and risks a dependency
+clash, so it isn't on the live path yet.
 
-### Infra: FastAPI + uv, azd to Container Apps + Static Web Apps
+### Infra: FastAPI + uv, azd to Container Apps
 
 FastAPI is the framework in Microsoft's own Foundry samples and its OpenAPI surface
 is how a Foundry agent would call us. `azd up` makes the cloud deploy real and
-reproducible. The video records off localhost so a cold start is never the first
-impression. The Next.js front end ships as a static export — hybrid SSR on Static
-Web Apps is still preview with cold-start issues we won't risk on the demo.
+reproducible — a Container Apps environment hosting both services, a user-assigned
+managed identity with the data-plane roles, Key Vault, and Application Insights,
+all from Bicep. The video records off localhost so a cold start is never the first
+impression. Static Web Apps was dropped: hosting the console as a second container
+app means one deploy target and one identity model.
 
 ---
 
@@ -141,11 +152,12 @@ Web Apps is still preview with cold-start issues we won't risk on the demo.
 |-----|---------------|
 | Real Teams/Outlook/Fabric ingestion | Paywalled / post-deadline / undemoable; synthetic corpus is the right call anyway |
 | Durable workflow checkpointing | The framework's checkpointing re-runs the first step and re-rolls the sim on resume; roadmap |
-| The AI SDK approval primitive | It's a Node-agent-loop feature; we hand-roll the gate as a custom data part instead of adding a second runtime |
+| A charting library (Recharts/Tremor) | Hand-built SVG renders a range that crosses zero and removes a dependency; Tremor is React-18-only/unmaintained |
+| Vercel AI Elements | Once the panels were hand-built it added a dependency for no gain; the SSE console is native |
 | PyMC / Bayesian simulation | Heavier, sampler-tuning risk; the seeded Monte Carlo is enough and is reproducible |
-| Neo4j NVL render | Optional on-camera flourish; React Flow is the default |
-| Cloud agentic red-teaming | Region-locked and heavy; the local scan produces the same artifact |
+| Neo4j (graph server) | At ~19 nodes brute-force cosine is exact and sub-ms; the server is pure friction and a failure surface |
+| Red-team ASR artifact (live) | Needs a cloud Foundry project and risks a dependency clash with the agent stack; roadmap |
 | Content Safety auto-correction | Preview; we need detect-and-explain, which is GA |
-| Hybrid SSR on Static Web Apps | Preview, cold starts; static export instead |
+| Static Web Apps | The console ships as a second container app — one deploy target, one identity model |
 | Multi-scenario breadth | One polished scenario end to end beats a generic pipeline |
 | Scale-to-zero for the demo | Would evict the in-memory workflow across the approval round-trip; `min-replicas=1` |

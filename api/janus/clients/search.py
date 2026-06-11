@@ -10,7 +10,7 @@ subqueries the planner generated).
 Auth is keyless (DefaultAzureCredential). The preview retrieve path is primary;
 if it is unavailable the caller can fall back to the GA extractive path.
 
-Verified against azure-search-documents 12.1.0b2 (REST 2026-05-01-preview).
+Verified against azure-search-documents 11.7.0b2 (REST 2026-05-01-preview).
 """
 from __future__ import annotations
 

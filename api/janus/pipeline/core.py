@@ -205,22 +205,28 @@ async def run_janus_pipeline(action: ProposedAction) -> AsyncIterator[str]:
     # it — a 94%-grounded lesson is provisional, not no-confidence.
     # A score at the floor (2.5) is already a passing semantic match, so it earns
     # a 0.3 baseline; ~3.5+ is a strong match -> 1.0. Linear between.
+    cfg = get_settings()
     top_score = max((p.reranker_score or 0.0) for p in outcome.precedents)
-    floor = float(get_settings().reranker_threshold)
+    floor = float(cfg.reranker_threshold)
     retrieval_conf = min(1.0, max(0.0, 0.3 + 0.7 * (top_score - floor) / 1.0)) if top_score else 0.0
     grounding_conf = grounded_pct / 100
     decisiveness = _decisiveness(sim) if sim_ok and sim else 0.0
-    trust = round(0.3 * retrieval_conf + 0.4 * grounding_conf + 0.3 * decisiveness, 2)
+    w_r, w_g, w_d = cfg.trust_weight_retrieval, cfg.trust_weight_grounding, cfg.trust_weight_decisiveness
+    trust = round(w_r * retrieval_conf + w_g * grounding_conf + w_d * decisiveness, 2)
     if ungrounded:
-        trust = min(trust, 0.6)
-    state = "ok" if trust >= 0.6 else "weak_evidence"
+        trust = min(trust, cfg.trust_floor)
+    state = "ok" if trust >= cfg.trust_floor else "weak_evidence"
     yield _ev(6, StepKind.trust, StepStatus.done,
               f"Trust {int(trust * 100)}/100",
               trust=trust, state=state,
+              floor=cfg.trust_floor,
               components={
                   "retrieval": round(retrieval_conf, 2),
                   "grounding": round(grounding_conf, 2),
                   "decisiveness": round(decisiveness, 2),
+              },
+              weights={
+                  "retrieval": w_r, "grounding": w_g, "decisiveness": w_d,
               })
 
     # --- 8. HITL GATE ---------------------------------------------------------

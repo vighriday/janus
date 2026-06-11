@@ -39,9 +39,32 @@ class Settings(BaseSettings):
 
     # Graph is in-process (NetworkX) — no server, no connection config.
 
+    # Observability — OpenTelemetry, dual sink. Both optional: when neither is set
+    # the tracer is a no-op and the app boots normally. Local demo points at
+    # Phoenix; production sets the App Insights connection string (injected from
+    # Key Vault by the managed identity, never a literal here).
+    otel_exporter_otlp_endpoint: str = ""
+    """Phoenix/OTLP HTTP collector, e.g. http://localhost:6006/v1/traces."""
+    applicationinsights_connection_string: str = ""
+    """Azure Monitor / Application Insights. Set in the cloud; empty locally."""
+    otel_service_name: str = "janus-api"
+
     # Behaviour
     reranker_threshold: float = 2.5
     """Minimum reranker score for a precedent to count as grounding. Below this, abstain."""
+
+    # Trust-score weights (retrieval, grounding, decisiveness). Sum to 1.0. Exposed
+    # so the policy is config, not a magic number scattered across code and UI.
+    trust_weight_retrieval: float = 0.3
+    trust_weight_grounding: float = 0.4
+    trust_weight_decisiveness: float = 0.3
+    trust_floor: float = 0.6
+    """At/above this composed score the recommendation clears for human review."""
+
+    # The dependency-concentration knee from the corpus policy (share of a critical
+    # flow on one vendor above which the resilience hedge is lost). Single source of
+    # truth for the cost model, the causal layer, and the console.
+    concentration_knee: float = 0.70
 
 
 @lru_cache

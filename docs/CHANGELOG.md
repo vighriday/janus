@@ -41,7 +41,7 @@ Re-checked every component against the current field before building further.
 Five changed:
 
 - Decision graph moved from Neo4j to an in-process NetworkX graph with NumPy
-  cosine — at ~40 nodes a graph server is pure friction, so this removes a Docker
+  cosine — at ~19 nodes a graph server is pure friction, so this removes a Docker
   service entirely. Tore down the Neo4j container and image.
 - Added a thin DoWhy causal layer to the simulation for real `do()` futures.
 - Folded red-teaming into `azure-ai-evaluation[redteam]`; added DeepEval as an

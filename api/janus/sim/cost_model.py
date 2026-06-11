@@ -25,10 +25,19 @@ from scipy import stats
 
 FORMULA_VERSION = "cost-model-1"
 
-# Above this share on one vendor, a concentration failure stops being absorbable.
-# This is the 70% ceiling the Northwind policy encodes, expressed as a knee in
-# the resilience-loss curve rather than a hard cliff.
-_RESILIENCE_KNEE = 0.70
+
+def _resilience_knee() -> float:
+    """The concentration knee, from config. Above this share on one vendor a
+    concentration failure stops being absorbable — the policy ceiling the corpus
+    encodes, expressed as a knee in the resilience-loss curve, not a hard cliff."""
+    from janus.config import get_settings
+
+    return get_settings().concentration_knee
+
+
+# Module-level snapshot for the hot loop and for callers that import the constant.
+# Kept in sync with config at import; config is the single source of truth.
+_RESILIENCE_KNEE = _resilience_knee()
 
 
 @dataclass

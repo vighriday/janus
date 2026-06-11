@@ -1,6 +1,6 @@
 # JANUS — Architecture
 
-_Last updated: 2026-06-11. Versions verified current as of June 2026._
+*Last updated: 2026-06-11. Versions verified current as of June 2026.*
 
 This document pins the stack, explains why each piece was chosen over its closest
 alternative, and records the edge cases and integration seams that the design has
@@ -31,45 +31,45 @@ and the reasoning visible.
   │  [3] TRACE ─ in-process NetworkX decision graph.                      │
   │        │     map each cited precedent → traverse decision→outcome→lesson│
   │        ▼                                                               │
-  │  [4] LESSON ─ Microsoft Agent Framework executor (FoundryChatClient).  │
-  │        │      one principle, ≥2 sources, every claim cited.            │
+  │  [4] LESSON ─ Azure OpenAI (gpt-4o-mini) over the cited sources.       │
+  │        │      one principle, every claim cited, else INSUFFICIENT.     │
   │        ▼                                                               │
   │  [5] GROUNDING GATE ─ Content Safety Groundedness Detection            │
-  │        │      (reasoning mode) + Ragas faithfulness (2nd judge)        │
+  │        │      (binary mode; reasoning-mode is roadmap, see §3a)        │
   │        ▼                                                               │
-  │  [6] SIMULATE ─ fan out 3 futures. LLM emits levers only; NumPy        │
-  │        │        seeded Monte Carlo + SciPy triangular compute numbers; │
-  │        │        SALib Sobol tornado. P10/P50/P90 + SHA-256 manifest.   │
+  │  [6] SIMULATE ─ fan out 3 futures. LLM emits bounded levers only;      │
+  │        │        seeded NumPy Monte Carlo + SciPy triangular compute    │
+  │        │        the numbers; DoWhy do() contrast. P10/P50/P90 + manifest│
   │        ▼                                                               │
-  │  [7] TRUST SCORE ─ reranker confidence + grounding + sim agreement     │
+  │  [7] TRUST SCORE ─ reranker confidence + grounding + decisiveness      │
   │        ▼                                                               │
   │  [8] HITL GATE ─ pause. human approves / rejects. NEVER auto-executes. │
   └──────────────────────────────────────────────────────────────────────┘
 
   Orchestration spine:  Microsoft Agent Framework Workflows (graph API)
   Backend:              FastAPI + Pydantic v2, managed with uv
-  Frontend:             Next.js 15 + shadcn/ui + AI Elements + React Flow 12
-  Observability:        OpenTelemetry → Azure Monitor / Application Insights
+  Frontend:             Next.js 15 + Tailwind v4 + React Flow 12 (hand-built SVG charts)
+  Observability:        OpenTelemetry → Arize Phoenix (local) + Azure Monitor (prod)
   Roadmap (drawn, not built): Work IQ + Fabric IQ as added knowledge sources;
-                              durable checkpointing; probabilistic simulation
+                              durable checkpointing; probabilistic simulation;
+                              groundedness reasoning-mode; red-team ASR artifact
 ```
 
 ## 2. The chosen stack
 
-_Every choice below was re-audited against the full field of current alternatives
-(see `docs/DECISIONS.md`). Five components changed in that audit; those rows are
-marked ‡._
+*Every choice below was re-audited against the full field of current alternatives
+(see `docs/DECISIONS.md`). The rows marked ‡ changed in that audit.*
 
-| Layer | Choice | Pinned | Closest alternative (and why not) |
-|-------|--------|--------|-----------------------------------|
-| Orchestration | Microsoft Agent Framework, Workflows graph API; FoundryChatClient executors; first-party `agent-framework-azure-ai-search` Foundry bridge | `agent-framework==1.8.x`, bridge pinned `--pre` | LangGraph 1.2 — co-equal on graphs/HITL, but third-party with no Foundry bridge; demotes Foundry to a bolt-on |
-| Retrieval (the IQ layer) | Foundry IQ knowledge base on Azure AI Search agentic retrieval, 2026-05-01-preview retrieve action | pinned `--pre azure-search-documents` build | Hand-rolled hybrid pipeline — loses the mandatory-IQ point. Kept as the fallback adapter behind the retrieval interface. |
-| Decision graph ‡ | **NetworkX in-process typed DiGraph + NumPy brute-force cosine** | `networkx>=3.4` | Neo4j/Memgraph — a graph server earns nothing at 40 nodes (brute-force cosine is exact and sub-ms); pure setup friction + a demo-failure surface. Kuzu archived Oct 2025. Thin `GraphStore` interface keeps a server swap one class away. |
-| Simulation ‡ | LLM emits levers only + deterministic NumPy Monte Carlo, SciPy triangular; thin **DoWhy GCM** for literal `do()` counterfactuals | NumPy 2.x, SciPy 1.15, DoWhy 0.12+ | SALib Sobol kept as an optional offline panel, off the live path; PyMC Bayesian is roadmap |
-| Frontend | Next.js 15 + shadcn/ui + Vercel AI Elements (AI SDK 6) + React Flow 12 + Recharts v3 | AI SDK 6 GA, `@xyflow/react` 12.11 | assistant-ui — strong, but AI Elements ships the citation/chain-of-thought/tool components we need out of the box. Tremor excluded; Recharts is the sole chart lib. |
-| Safety + eval ‡ | Content Safety Groundedness + Prompt Shields + **azure-ai-evaluation `[redteam]`** (wraps PyRIT) + Ragas + DeepEval fallback | `azure-ai-evaluation>=1.17` | Standalone PyRIT folded into the eval package; NeMo/Guardrails-AI lose the Azure-native narrative. Foundry project pinned to East US 2 (region-locked previews). |
-| Backend / infra ‡ | FastAPI + Pydantic v2 + uv; azd → Container Apps hosting **both** services; Key Vault + managed identity | FastAPI 0.136.x, uv 0.7.x | Static Web Apps dropped — hosting the frontend as a second container app means one deploy target, one identity model, and no Vercel-ToS question |
-| Observability ‡ | OpenTelemetry, dual sink: Azure Monitor/App Insights + local **Arize Phoenix** trace UI | `arize-phoenix-otel`, `openinference-instrumentation-openai` | App Insights alone has 1–3 min ingestion lag — too slow for a live demo; Phoenix is the on-camera trace UI, App Insights the cited production sink |
+| Layer | Choice (as built) | Pinned | Closest alternative (and why not) |
+|-------|-------------------|--------|-----------------------------------|
+| Orchestration | Microsoft Agent Framework, Workflows graph API — typed `Executor` nodes, edges, fan-out/fan-in, and a `ctx.request_info` human-in-the-loop pause | `agent-framework==1.8.1` (pinned exactly; decorator validation is version-sensitive) | LangGraph — co-equal on graphs/HITL, but third-party; demotes Foundry to a bolt-on |
+| Retrieval (the IQ layer) | Foundry IQ knowledge base on Azure AI Search agentic retrieval via `KnowledgeBaseRetrievalClient`, 2026-05-01-preview, `answerSynthesis` + `include_activity` | `azure-search-documents>=11.7.0b2` | Hand-rolled hybrid pipeline — loses the mandatory-IQ point. The `agent-framework-azure-ai-search` bridge is present only as a version pin; it doesn't expose the activity/citation detail, so the raw client is the path. |
+| Decision graph ‡ | NetworkX in-process `DiGraph` loaded from corpus frontmatter; precedents joined by `doc_id`, outcomes traversed by BFS | `networkx>=3.4` | Neo4j/Memgraph — a graph server earns nothing at ~19 nodes; pure setup friction + a demo-failure surface. Kuzu archived Oct 2025. A `GraphStore` seam keeps a server swap one class away. |
+| Simulation ‡ | LLM emits bounded levers only (Pydantic schema) + seeded NumPy Monte Carlo, SciPy triangular; thin **DoWhy GCM** for a literal `do()` counterfactual contrast | NumPy 2.x, SciPy 1.15, DoWhy 0.14 | PyMC Bayesian is roadmap. (SALib Sobol was considered for an offline sensitivity panel and cut to keep the live path lean.) |
+| Frontend | Next.js 15 (App Router) + Tailwind v4 + React Flow 12 (`@xyflow/react`); charts and gauges are hand-built SVG; SSE transport | `@xyflow/react` 12.8.6, Next 15.5.19 | A charting library (Recharts/Tremor) was dropped: hand-drawn SVG renders a range that crosses zero, which a stacked bar can't, and removes a dependency. Tremor is React-18-only/unmaintained — non-starter. |
+| Safety + eval | Content Safety Groundedness Detection + Prompt Shields (direct + indirect/XPIA); offline scorecard via **azure-ai-evaluation** (Groundedness + Relevance judges) | `azure-ai-evaluation>=1.17` | The offline judge is the same Content-Safety-aligned groundedness, so the scorecard predicts live behaviour. Red-teaming (AI Red Teaming Agent / PyRIT) is roadmap — it needs a cloud Foundry project and risks a dependency clash with the agent stack. |
+| Backend / infra | FastAPI + Pydantic v2 + uv; `azd` → Container Apps hosting **both** services; Key Vault + user-assigned managed identity; Bicep IaC | FastAPI 0.115+, uv | Static Web Apps dropped — hosting the console as a second container app means one deploy target, one identity model, and no Vercel-ToS question |
+| Observability | OpenTelemetry, dual sink: **Arize Phoenix** (local, on-camera trace UI) + **Azure Monitor / App Insights** (production), OpenAI auto-instrumented via OpenInference | `opentelemetry-sdk`, `openinference-instrumentation-openai`, `azure-monitor-opentelemetry-exporter` | App Insights alone has 1–3 min ingestion lag — too slow to show live; Phoenix is the on-camera view, App Insights the production sink. Both sinks are optional: no collector configured → spans recorded, nothing shipped. |
 
 ## 3. Why these, specifically
 
@@ -97,50 +97,60 @@ is built behind an interface that degrades to the GA extractive path, and the
 recorded demo replays a real captured response so a preview hiccup can't ruin it.
 
 **Decision graph — in-process NetworkX, kept deliberately small.** The graph is
-~20 hand-curated typed nodes (decision / failure / principle / lesson) with typed
-edges (caused / prevented / contradicted / reinforced). It does not overlap
-Foundry IQ: IQ does unstructured semantic retrieval over prose; the graph holds
-the structured decision→outcome→principle causality that flat retrieval can't
-express. The flow is IQ-first (find candidate precedents) then graph-second
-(traverse their outcomes). At this scale a graph server earns nothing — a brute-
-force cosine over ~40 vectors is exact and sub-millisecond — so the graph is an
-in-process `DiGraph` loaded from the corpus frontmatter, serialized straight to
-the React Flow render. A thin `GraphStore`-style seam keeps a server swap one
-class away if scale ever changed. (Built reality: precedents are joined to graph
-nodes by the `doc_id` in each retrieved blob's frontmatter snippet, since the
-blob knowledge source doesn't expose a document key.)
+~19 corpus nodes loaded from the decision records' frontmatter, with edges drawn
+from each record's `related:` links. It does not overlap Foundry IQ: IQ does
+unstructured semantic retrieval over prose; the graph holds the
+decision→outcome→principle structure that flat retrieval can't express. The flow
+is IQ-first (find candidate precedents) then graph-second (traverse their
+outcomes via BFS). At this scale a graph server earns nothing, so the graph is an
+in-process `DiGraph` loaded once at startup, serialized straight to the React
+Flow render. A `GraphStore`-style seam keeps a server swap one class away if
+scale ever changed. Precedents are joined to graph nodes by the `doc_id` in each
+retrieved blob's frontmatter snippet, since the blob knowledge source doesn't
+expose a document key. (A richer typed-edge taxonomy —
+caused/prevented/contradicted/reinforced — and contradiction/staleness handling
+are roadmap; today edges are the untyped `related:` links.)
 
 **Simulation — numbers the judges can't dismiss as fake.** The failure mode to
 avoid is hand-authored figures. So the language model never emits a final number;
 it emits qualitative levers and bounded parameters under a JSON schema, and a
 seeded deterministic Monte Carlo over a transparent cost model computes
-everything. Identical inputs reproduce identical output; changing an input
-provably moves the result; a SALib Sobol tornado shows which input drives the
-spread. Every run is hashed into a manifest. This is the rare hackathon claim
-that is independently reproducible.
+everything. Identical inputs reproduce identical output, and changing the
+dependency lever provably moves the result across the concentration knee — that
+lever is operator-set (it's the action's actual parameter), not an LLM output, so
+the flip is a real causal response, not a model guess. A DoWhy `do()` intervention
+quantifies the dependency→resilience-loss effect. Every run is hashed into a
+manifest. This is the rare hackathon claim that is independently reproducible.
 
-**Frontend — the biggest accelerant available.** Vercel AI Elements ships, on top
-of shadcn/ui, exactly the components JANUS needs: a chain-of-thought step log,
-tool-call display, source pills with inline citations, task progress. They bind
-directly to an SSE stream of custom data parts coming from the Python backend, so
-the console reads as native and there's no Node agent loop to maintain. React
-Flow renders the decision graph; Recharts renders the confidence bands.
+**Frontend — a thin, native-feeling SSE console.** The Next.js App Router console
+binds directly to an SSE stream of typed step events from the Python backend, so
+there's no Node agent loop to maintain and one source of run state. The panels —
+a chain-of-thought step log, citation chips, the precedent graph, the outcome
+bands, the trust gauge, the approval gate — are built on Tailwind v4 with React
+Flow for the graph and hand-drawn SVG for the charts and gauge (a charting
+library was dropped: a hand-drawn scale renders an outcome range that crosses
+zero, which a stacked bar can't, and it removes a dependency).
 
-**Safety — one Microsoft-native story, all GA.** Content Safety Groundedness
-Detection (reasoning mode) flags ungrounded segments of an extracted principle
-and drives abstention. Prompt Shields screen both the action and the retrieved
-docs. The offline azure-ai-evaluation harness uses the *same* Content-Safety
-backed groundedness service, so the README scorecard and the live gate measure
-the same thing — no drift between eval and production. A local PyRIT red-team scan
-produces an attack-success-rate slide: a guardrail that hasn't been attacked is a
-red flag, so we attack our own.
+**Safety — one Microsoft-native story.** Content Safety Groundedness Detection
+flags an extracted principle that isn't supported by its sources and drives
+abstention (binary mode today; segment-level reasoning mode is roadmap, gated by
+a model-deprecation issue — see §3a). Prompt Shields screen both the action and
+the retrieved docs (direct + indirect/XPIA). The offline azure-ai-evaluation
+harness uses the *same* Content-Safety-aligned groundedness, so the committed
+scorecard and the live gate measure the same thing — no drift between eval and
+production. A red-team attack-success-rate artifact (AI Red Teaming Agent / PyRIT)
+is roadmap — a guardrail that hasn't been attacked is a red flag, so it's on the
+plan, but it needs a cloud Foundry project and risks a dependency clash with the
+agent stack, so it isn't on the live path yet.
 
 **Infra — Microsoft-native and demo-proof.** FastAPI is the framework in
 Microsoft's own Foundry Agent Service Python samples; its OpenAPI surface is how
-a Foundry agent would call JANUS. `azd up` provisions Container Apps + Static Web
-Apps + Key Vault + managed identity from one command, so the repo demonstrates
-real, reproducible IaC. The deployed app exists for credibility; the recorded
-video runs off localhost so a cold start can never be the first impression.
+a Foundry agent would call JANUS. `azd up` provisions a Container Apps environment
+hosting both services, a user-assigned managed identity with the data-plane role
+assignments, Key Vault, and Application Insights from one command (Bicep), so the
+repo demonstrates real, reproducible IaC. The deployed app exists for credibility;
+the recorded video runs off localhost so a cold start can never be the first
+impression.
 
 ## 3a. Built reality (Phase 1) — where the build diverged from the plan
 
@@ -187,47 +197,54 @@ either one alone. The build must respect all of them.
    checkpointing for this — it re-runs the first executor on resume and re-rolls
    the simulation, so it is roadmap, not a demo feature.
 
-3. **Preview vs GA silent downgrade.** Query-planning visibility and synthesized
-   citations exist only in the preview API. If the client falls back to GA, those
-   two beats vanish. The client detects the missing activity records and visibly
-   flags "GA fallback" rather than showing a quietly degraded trace. The
-   citation array and reranker gating exist in both, so those beats survive a
-   fallback.
+3. **Preview vs GA downgrade.** Query-planning visibility and synthesized
+   citations exist only in the preview API; the citation array and reranker gating
+   exist in both. If the preview retrieve is unavailable the pipeline surfaces a
+   failed retrieval rather than silently degrading. (A graceful GA-extractive
+   fallback that flags "GA fallback" in the trace is roadmap — today retrieval is
+   preview-or-fail.)
 
 4. **Deterministic seeding under fan-out.** Each simulation branch seeds its RNG
    from the run id, not a global seed, so if the framework re-executes a branch
    the numbers reproduce exactly. The seed goes in the run manifest.
 
-5. **Package fragility.** Pin `agent-framework==1.8.1`, the tested `--pre`
-   `azure-search-documents` build that exposes the messages-input client, and a
-   `neo4j-graphrag-python` release that has adopted the SEARCH clause. Keep the
-   alpha CodeAct/hyperlight packages out of the critical path.
+5. **Package fragility.** Pin `agent-framework==1.8.1` exactly (decorator
+   validation is version-sensitive) and the tested `azure-search-documents`
+   pre-release that exposes the messages-input knowledge-base client. The graph is
+   in-process NetworkX, so there is no graph-driver pin to manage.
 
-## 5. Edge cases the system must handle
+## 5. Edge cases
+
+**Handled today:**
 
 - **No precedent.** Retrieval returns nothing above the reranker floor → abstain,
   depress the trust score, recommend human review. Never fabricate a lesson. This
   is the single most important credibility moment.
-- **Hallucinated lesson.** The grounding gate (Groundedness Detection + Ragas)
-  flags ungrounded segments; the UI surfaces the flagged span rather than
-  presenting the lesson as authoritative.
+- **Hallucinated lesson.** The Groundedness Detection gate flags a lesson that
+  isn't supported by its sources and blocks it from being presented as
+  authoritative (binary mode today; segment-level highlighting is roadmap).
+- **Thin evidence.** A lesson the model can't ground in the records returns
+  `INSUFFICIENT EVIDENCE` and abstains rather than inventing a principle.
 - **Indirect prompt injection via org history.** Retrieved decision docs are
-  untrusted; Prompt Shields screen them, not just the action.
-- **Partial retrieval.** A knowledge source error returns partial content; for
-  compliance-critical sources, fail loud and abstain rather than ground on an
-  incomplete evidence set.
-- **Conflicting precedents.** Two equally-similar past decisions with opposite
-  outcomes → surface both with their weights; do not average them into a
-  misleading single answer.
-- **Contradiction and staleness.** A new outcome that opposes a prior principle
-  creates a `contradicted` edge; expired/superseded principles are down-weighted
-  and badged in the UI; lineage stays auditable.
-- **HITL abandonment / double-click.** The run registry is idempotent on resume
-  and times out abandoned runs.
-- **Demo-day failure.** Defense in depth: record on localhost; every external
-  call has a committed real-captured fixture; `min-replicas=1`; the eval
-  scorecard, red-team slide, and groundedness screenshots are committed so the
-  reliability artifacts exist even if a live run is flaky.
+  untrusted; Prompt Shields screen them, not just the action, and flagged docs are
+  dropped before they reach the lesson step.
+- **Never executes.** JANUS has no execution capability by construction — it emits
+  a recommendation to a human. "Never auto-executes" is structural, not a flag.
+- **Demo-day resilience.** Record on localhost; `min-replicas=1` so the in-memory
+  workflow survives the approval round-trip; the eval scorecard is committed so the
+  reliability evidence exists even if a live run is flaky.
+
+**Roadmap (designed, not yet built):**
+
+- **Partial retrieval → fail loud.** Treat an incomplete knowledge-source result
+  as a reason to abstain on compliance-critical flows rather than ground on it.
+- **Conflicting precedents.** Surface two opposite-outcome precedents with their
+  weights instead of averaging them into one misleading answer.
+- **Contradiction & staleness.** Typed `contradicted` edges and down-weighting /
+  badging of superseded principles (needs the typed-edge taxonomy above).
+- **Captured-fixture replay.** A committed real-response fixture per external call
+  so the demo can run fully offline.
+- **Red-team ASR artifact.** A committed attack-success-rate scorecard.
 
 ## 6. Risk register (load-bearing first)
 
@@ -245,11 +262,11 @@ either one alone. The build must respect all of them.
 ## 7. What is explicitly cut (and why it's safe to cut)
 
 Recorded in `docs/DECISIONS.md`. In short: Work IQ / Fabric IQ (roadmap, plug
-into the same knowledge base later), durable checkpointing (roadmap), the AI SDK
-approval primitive (hand-rolled instead), PyMC (roadmap), Neo4j NVL (optional
-flourish), cloud red-teaming (local scan instead), hybrid SSR on Static Web Apps
-(static export instead), and multi-scenario breadth (one polished scenario plus
-one or two canned secondaries).
+into the same knowledge base later), durable checkpointing (roadmap), a charting
+library (hand-built SVG instead), PyMC Bayesian simulation (roadmap), red-teaming
+(roadmap — needs a cloud Foundry project), Static Web Apps (the console ships as a
+second container app instead), and multi-scenario breadth (one polished scenario
+end to end).
 
 ## 8. Verdict
 

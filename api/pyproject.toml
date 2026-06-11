@@ -12,26 +12,23 @@ dependencies = [
     "httpx>=0.27",
     # azure
     "azure-identity>=1.19",
-    "azure-search-documents>=11.6.0b12",
+    "azure-search-documents>=11.7.0b2",
     "azure-ai-contentsafety>=1.0",
     "azure-ai-evaluation>=1.17",
     "openai>=1.54",
-    # orchestration
-    "agent-framework>=1.8",
+    # orchestration — pinned: do not float once green (decorator validation is version-sensitive)
+    "agent-framework==1.8.1",
     # graph (in-process — no server)
     "networkx>=3.4",
     # simulation
     "numpy>=2.1",
     "scipy>=1.14",
-    "salib>=1.5.1",
     "dowhy>=0.12",
-    # eval
-    "ragas>=0.2",
-    "deepeval>=3.0",
-    # observability
+    # observability — OpenTelemetry, dual sink: local Phoenix (demo) + Azure Monitor (prod)
     "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-http>=1.27",
     "openinference-instrumentation-openai>=0.1",
-    "arize-phoenix-otel>=0.6",
+    "azure-monitor-opentelemetry-exporter>=1.0.0b30",
     # parsers
     "pyyaml>=6.0",
 ]

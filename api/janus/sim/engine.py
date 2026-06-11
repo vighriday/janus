@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 
 from janus.clients.llm import LLMClient
+from janus.config import get_settings
 from janus.sim.causal import CausalModel
 from janus.sim.cost_model import ScenarioResult, run_manifest, run_scenario
 from janus.sim.levers import propose_levers
@@ -64,22 +65,26 @@ async def simulate(
     # ~70% resilience knee and the approve future stops being high-risk, so the
     # guardrail recommends it instead of forcing a modify.
     if dependency_anchor is not None:
+        knee = get_settings().concentration_knee
         anchor = min(1.0, max(0.0, float(dependency_anchor)))
+        # Failure probability rises linearly with how far past the knee the share
+        # sits (base rate below the knee, climbing to ~base+0.45 at full
+        # dependency). This is the corpus relationship, parameterized off the knee.
+        base_fp, slope = 0.04, 0.45
+        over = max(0.0, anchor - knee) / max(1.0 - knee, 1e-9)
         for s in scenarios:
             if s.label == "approve":
                 # Approve = execute the action as proposed: its concentration is
-                # the action's actual dependency. Failure probability tracks
-                # dependency past the knee, the relationship the corpus encodes.
+                # the action's actual dependency.
                 s.dependency_after = anchor
-                s.failure_prob = round(0.04 + 0.45 * max(0.0, anchor - 0.70) / 0.30, 3)
+                s.failure_prob = round(base_fp + slope * over, 3)
             elif s.label == "modify":
-                # Modify = consolidate but hold the top vendor just under the 70%
-                # knee with a warm fallback — the corpus lesson made concrete.
-                # Pin it so it's always the survivable middle, never sliding into
-                # the tail with the approve future when the operator pushes the
-                # dependency up. This is the option the guardrail falls back to.
-                s.dependency_after = min(s.dependency_after, 0.65)
-                s.failure_prob = min(s.failure_prob, 0.06)
+                # Modify = consolidate but hold the top vendor just under the knee
+                # with a warm fallback — the corpus lesson made concrete. Pin it so
+                # it's always the survivable middle, never sliding into the tail
+                # with approve when the operator pushes the dependency up.
+                s.dependency_after = min(s.dependency_after, knee - 0.05)
+                s.failure_prob = min(s.failure_prob, base_fp + 0.02)
 
     results = [run_scenario(s, run_id) for s in scenarios]
     recommended = _pick(results)
