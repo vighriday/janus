@@ -32,6 +32,8 @@ dependencies = [
     "opentelemetry-sdk>=1.27",
     "openinference-instrumentation-openai>=0.1",
     "arize-phoenix-otel>=0.6",
+    # parsers
+    "pyyaml>=6.0",
 ]
 
 [dependency-groups]

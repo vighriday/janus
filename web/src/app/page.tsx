@@ -33,7 +33,7 @@ export default function Home() {
     setOrder([]);
     setRunning(true);
     try {
-      for await (const ev of runPipeline(DEMO_ACTION, "/smoke", ac.signal)) {
+      for await (const ev of runPipeline(DEMO_ACTION, "/invoke", ac.signal)) {
         setEvents((prev) => {
           const next = new Map(prev);
           next.set(ev.id, ev);

@@ -82,3 +82,14 @@ async def smoke(action: ProposedAction) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+from janus.pipeline.core import run_janus_pipeline
+
+@app.post("/invoke")
+async def invoke(action: ProposedAction) -> StreamingResponse:
+    """Run the real JANUS pipeline steps over SSE."""
+    return StreamingResponse(
+        run_janus_pipeline(action),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
