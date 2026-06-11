@@ -1,0 +1,14 @@
+{
+  "dataset": "groundedness_cases.jsonl",
+  "case_count": 5,
+  "metrics": {
+    "groundedness.groundedness": 4.2,
+    "groundedness.groundedness_score": 4.2,
+    "groundedness.groundedness_passed": 1.0,
+    "relevance.relevance": 4.4,
+    "relevance.relevance_score": 4.4,
+    "relevance.relevance_passed": 1.0,
+    "groundedness.binary_aggregate": 1.0,
+    "relevance.binary_aggregate": 1.0
+  }
+}

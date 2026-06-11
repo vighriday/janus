@@ -70,3 +70,33 @@ frontend stack were confirmed unchanged.
 Phase 0 exit met: a clone-and-run skeleton that streams end to end, on a
 region-verified Azure footprint. Next up is Phase 1 — the live Foundry IQ
 retrieval and the safety spine.
+
+### Phase 1 — the live pipeline — 2026-06-11
+
+- Wired the real pipeline end to end on Azure: Content Safety prompt shields
+  (direct + indirect), Foundry IQ agentic retrieval over the blob knowledge base
+  (query planning, reranked precedents, citations), the in-process graph trace,
+  gpt-4o-mini lesson extraction, and the Content Safety groundedness gate.
+  Abstains when there's no precedent. All keyless.
+- Reviewed and corrected an earlier key-based detour: stripped the keys, switched
+  the search service to RBAC auth, went fully keyless.
+- Composed an initial trust score from retrieval confidence + grounding.
+
+### Phase 2 — reasoning depth — 2026-06-11
+
+- Built the counterfactual simulation: the model proposes scenario levers under a
+  strict schema (never figures), a seeded Monte Carlo over a transparent cost
+  model produces P10/P50/P90 bands, and a DoWhy causal model quantifies the
+  do()-effect of the dependency lever. The recommendation refuses any high-risk
+  future and picks the best risk-adjusted one — the guardrail declining the
+  catastrophic tail even when its median leads. Every run carries a seed manifest.
+- Completed the trust score with a third signal (how decisively the recommended
+  future beats the safe alternatives).
+- Re-expressed the pipeline as a Microsoft Agent Framework workflow graph — six
+  typed executors, edges, and a human-in-the-loop pause via ctx.request_info —
+  exposed at /invoke-workflow alongside the plain-async /invoke.
+- Added an evaluation scorecard (Azure AI Evaluation, keyless): groundedness
+  ~4.2/5 and relevance ~4.4/5 over a fixed set of decision cases, both passing.
+  Committed so the reliability evidence is in the repo.
+- Red-teaming deferred: the AI Red Teaming Agent needs a cloud Foundry project
+  and pulls PyRIT, which risks a clash with the agent stack. Roadmap.
