@@ -20,6 +20,7 @@ from pathlib import Path
 from janus.clients.llm import LLMClient
 from janus.clients.safety import SafetyClient
 from janus.clients.search import FoundryRetriever, RetrievalOutcome, doc_id_from_snippet
+from janus.config import get_settings
 from janus.models import ProposedAction, StepKind, StepStatus, StreamEvent
 from janus.models.graph import DecisionGraph
 
@@ -164,7 +165,7 @@ async def run_janus_pipeline(action: ProposedAction) -> AsyncIterator[str]:
         ungrounded, grounded_pct = False, 0
     yield _ev(
         4, StepKind.grounding, StepStatus.done,
-        "Ungrounded claims found" if ungrounded else f"Grounded ({grounded_pct}%)",
+        f"Grounded {grounded_pct}%" + (" — some claims flagged" if ungrounded else ""),
         ungrounded=ungrounded, grounded_pct=grounded_pct,
     )
 
@@ -173,13 +174,25 @@ async def run_janus_pipeline(action: ProposedAction) -> AsyncIterator[str]:
     yield _ev(5, StepKind.simulate, StepStatus.skipped, "Simulation arrives in Phase 2",
               placeholder=True)
 
-    # --- 7. TRUST (Phase 2 — partial) -----------------------------------------
-    # A real composite lands with the simulation. For now reflect the two real
-    # signals we have: grounded and not-injection.
-    trust = 0.0 if ungrounded else round(grounded_pct / 100, 2)
+    # --- 7. TRUST: compose the real signals we have so far --------------------
+    # Two components, each in [0,1]: retrieval confidence (how far the top
+    # precedent cleared the 2.5 reranker floor) and grounding (how much of the
+    # lesson the sources support). A partial-ungrounded flag caps the score
+    # rather than zeroing it — 90%-grounded is not no-confidence. The simulation
+    # adds a third component in Phase 2.
+    top_score = max((p.reranker_score or 0.0) for p in outcome.precedents)
+    floor = float(get_settings().reranker_threshold)
+    retrieval_conf = min(1.0, max(0.0, (top_score - floor) / floor)) if top_score else 0.0
+    grounding_conf = grounded_pct / 100
+    trust = round(0.4 * retrieval_conf + 0.6 * grounding_conf, 2)
+    if ungrounded:
+        trust = min(trust, 0.6)  # cap, don't zero, when some claims are unsupported
+    state = "ok" if trust >= 0.6 else "weak_evidence"
     yield _ev(6, StepKind.trust, StepStatus.done,
-              f"Provisional trust {int(trust * 100)}/100 (grounding only)",
-              trust=trust, state="ok" if not ungrounded else "weak_evidence")
+              f"Provisional trust {int(trust * 100)}/100 "
+              f"(retrieval {int(retrieval_conf * 100)}%, grounding {grounded_pct}%)",
+              trust=trust, state=state,
+              components={"retrieval": round(retrieval_conf, 2), "grounding": round(grounding_conf, 2)})
 
     # --- 8. HITL GATE ---------------------------------------------------------
     yield _ev(7, StepKind.approval, StepStatus.running, "Awaiting human approval")

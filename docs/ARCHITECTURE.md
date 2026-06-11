@@ -28,8 +28,8 @@ and the reasoning visible.
   │        │        reranker scores + [ref_id:N] citations. (THE IQ BEAT)  │
   │        │        below 2.5 floor → ABSTAIN                              │
   │        ▼                                                               │
-  │  [3] TRACE ─ Neo4j (neo4j-graphrag-python, Cypher 25 SEARCH clause).   │
-  │        │     resolve cited docKeys → traverse decision→outcome→lesson  │
+  │  [3] TRACE ─ in-process NetworkX decision graph.                      │
+  │        │     map each cited precedent → traverse decision→outcome→lesson│
   │        ▼                                                               │
   │  [4] LESSON ─ Microsoft Agent Framework executor (FoundryChatClient).  │
   │        │      one principle, ≥2 sources, every claim cited.            │
@@ -96,17 +96,19 @@ inline `[ref_id:N]` citations (accuracy), reranker scores in the activity array
 is built behind an interface that degrades to the GA extractive path, and the
 recorded demo replays a real captured response so a preview hiccup can't ruin it.
 
-**Decision graph — Neo4j, kept deliberately small.** The graph is 20–40
-hand-curated typed nodes (decision / failure / principle / lesson) with typed
-edges (caused / prevented / contradicted / reinforced) and temporal properties
-(`valid_from` / `valid_until` / `superseded_by`) that make contradiction
-detection and staleness first-class. It does not overlap Foundry IQ: IQ does
-unstructured semantic retrieval over prose; Neo4j holds the structured
-decision→outcome→principle causality that flat retrieval can't express. The flow
-is IQ-first (find candidate precedents) then graph-second (traverse their
-outcomes). All vector retrieval is written against the Cypher 25 SEARCH clause —
-the legacy `db.index.vector.queryNodes` procedures were deprecated in 2026.04 and
-would look dated on camera.
+**Decision graph — in-process NetworkX, kept deliberately small.** The graph is
+~20 hand-curated typed nodes (decision / failure / principle / lesson) with typed
+edges (caused / prevented / contradicted / reinforced). It does not overlap
+Foundry IQ: IQ does unstructured semantic retrieval over prose; the graph holds
+the structured decision→outcome→principle causality that flat retrieval can't
+express. The flow is IQ-first (find candidate precedents) then graph-second
+(traverse their outcomes). At this scale a graph server earns nothing — a brute-
+force cosine over ~40 vectors is exact and sub-millisecond — so the graph is an
+in-process `DiGraph` loaded from the corpus frontmatter, serialized straight to
+the React Flow render. A thin `GraphStore`-style seam keeps a server swap one
+class away if scale ever changed. (Built reality: precedents are joined to graph
+nodes by the `doc_id` in each retrieved blob's frontmatter snippet, since the
+blob knowledge source doesn't expose a document key.)
 
 **Simulation — numbers the judges can't dismiss as fake.** The failure mode to
 avoid is hand-authored figures. So the language model never emits a final number;
@@ -139,6 +141,32 @@ a Foundry agent would call JANUS. `azd up` provisions Container Apps + Static We
 Apps + Key Vault + managed identity from one command, so the repo demonstrates
 real, reproducible IaC. The deployed app exists for credibility; the recorded
 video runs off localhost so a cold start can never be the first impression.
+
+## 3a. Built reality (Phase 1) — where the build diverged from the plan
+
+A few things the live build settled that the plan above couldn't:
+
+- **Knowledge source is an Azure Blob source, not a file-upload source.** The
+  `FileKnowledgeSource` (direct upload) is a 12.1-line feature; the SDK in the
+  environment is `azure-search-documents 11.7.0b2` (the line the agent-framework
+  Azure-AI-Search package pins), which exposes `AzureBlobKnowledgeSource` instead.
+  So the corpus is uploaded to a blob container and the knowledge base points at
+  it. Same outcome — an auto-vectorized, semantically-ranked index — one extra
+  storage account.
+- **The search service had to be switched off api-key-only auth.** It shipped as
+  `apiKeyOnly`, so keyless Entra tokens were rejected (403) regardless of role
+  assignments. Set to `aadOrApiKey` to make `DefaultAzureCredential` work. This
+  is why an early key-based detour appeared to be the only thing that worked.
+- **The Foundry bridge isn't used.** `agent-framework-azure-ai-search` doesn't
+  return structured citations/activity, so the raw `KnowledgeBaseRetrievalClient`
+  is the retrieval path. The bridge only matters as a dependency that pins the
+  search SDK version.
+- **Groundedness reasoning mode is gated by model deprecation.** Reasoning mode
+  needs gpt-4o 0513/0806, both in a deprecating state (can't deploy new). gpt-4o
+  2024-11-20 is deployed; the gate runs in binary (non-reasoning) mode until the
+  reasoning model question is resolved — still blocks ungrounded lessons.
+- **Keyless everywhere.** No API keys in code or `.env`; `DefaultAzureCredential`
+  throughout, REST bearer tokens for Content Safety.
 
 ## 4. The non-obvious integration seams
 
