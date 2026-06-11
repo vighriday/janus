@@ -90,7 +90,7 @@ through managed identity; nothing sensitive lives in this repo.
 # bring up the backend, frontend, and graph
 docker compose up
 
-# the console is served at http://localhost:3000
+# the console is served at http://localhost:3100
 ```
 
 Configuration goes in `.env` (see `.env.example` for the keys). The backend

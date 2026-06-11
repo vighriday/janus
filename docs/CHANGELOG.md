@@ -52,4 +52,21 @@ Five changed:
 Updated dependencies and re-locked. Orchestration (Agent Framework) and the
 frontend stack were confirmed unchanged.
 
-_Remaining Phase 0: the frontend skeleton and the full local stack bring-up._
+### Phase 0 complete — 2026-06-11
+
+- Built the Next.js console (App Router, Tailwind v4): it POSTs the intercepted
+  action and renders each pipeline step live as it streams in, with the
+  running → done reconciliation matching the backend contract.
+- Wrote the SSE client as a streamed fetch reader over the plain `data:` frame
+  format — the raw transport the architecture calls for, and a clean seam for
+  richer stream rendering later.
+- Verified the whole local pipe end to end: browser console → backend → the
+  six-step stream → live render, with CORS scoped to the dev origin. The
+  placeholder pipeline runs guard → retrieve → trace → lesson → grounding →
+  simulate → trust → approval → done.
+- Patched the Next.js security advisory and moved to Recharts 3. Ran the console
+  on port 3100 to avoid a collision with another local app.
+
+Phase 0 exit met: a clone-and-run skeleton that streams end to end, on a
+region-verified Azure footprint. Next up is Phase 1 — the live Foundry IQ
+retrieval and the safety spine.
