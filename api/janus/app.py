@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 from janus import __version__
 from janus.models import ProposedAction, StepKind, StepStatus, StreamEvent
 from janus.pipeline.core import run_janus_pipeline
+from janus.pipeline.workflow import run_workflow_pipeline
 
 app = FastAPI(title="JANUS", version=__version__)
 
@@ -84,11 +85,21 @@ async def smoke(action: ProposedAction) -> StreamingResponse:
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
+_SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+
+
 @app.post("/invoke")
 async def invoke(action: ProposedAction) -> StreamingResponse:
-    """Run the real JANUS pipeline steps over SSE."""
+    """Run the JANUS pipeline over SSE (plain async orchestration)."""
     return StreamingResponse(
-        run_janus_pipeline(action),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        run_janus_pipeline(action), media_type="text/event-stream", headers=_SSE_HEADERS
+    )
+
+
+@app.post("/invoke-workflow")
+async def invoke_workflow(action: ProposedAction) -> StreamingResponse:
+    """Run the JANUS pipeline over SSE through the Microsoft Agent Framework
+    workflow graph — the deterministic spine with the human-in-the-loop gate."""
+    return StreamingResponse(
+        run_workflow_pipeline(action.summary), media_type="text/event-stream", headers=_SSE_HEADERS
     )
