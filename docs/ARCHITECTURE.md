@@ -14,46 +14,55 @@ console renders it as it happens. Foundry IQ is the one real Microsoft
 intelligence layer. Everything else is chosen to keep that integration central
 and the reasoning visible.
 
-```
-                         JANUS interception pipeline
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │  proposed action (JSON: action, params, rationale)                     │
-  │        │                                                               │
-  │        ▼                                                               │
-  │  [1] GUARD ─ Content Safety Prompt Shields (direct + indirect/XPIA)    │
-  │        │     screens the action AND the docs we're about to read       │
-  │        ▼                                                               │
-  │  [2] RETRIEVE ─ Foundry IQ knowledge base / Azure AI Search agentic    │
-  │        │        retrieval. Query planning → ranked precedents +        │
-  │        │        reranker scores + [ref_id:N] citations. (THE IQ BEAT)  │
-  │        │        below 2.5 floor → ABSTAIN                              │
-  │        ▼                                                               │
-  │  [3] TRACE ─ in-process NetworkX decision graph.                      │
-  │        │     map each cited precedent → traverse decision→outcome→lesson│
-  │        ▼                                                               │
-  │  [4] LESSON ─ Azure OpenAI (gpt-4o-mini) over the cited sources.       │
-  │        │      one principle, every claim cited, else INSUFFICIENT.     │
-  │        ▼                                                               │
-  │  [5] GROUNDING GATE ─ Content Safety Groundedness Detection            │
-  │        │      (binary mode; reasoning-mode is roadmap, see §3a)        │
-  │        ▼                                                               │
-  │  [6] SIMULATE ─ fan out 3 futures. LLM emits bounded levers only;      │
-  │        │        seeded NumPy Monte Carlo + SciPy triangular compute    │
-  │        │        the numbers; DoWhy do() contrast. P10/P50/P90 + manifest│
-  │        ▼                                                               │
-  │  [7] TRUST SCORE ─ reranker confidence + grounding + decisiveness      │
-  │        ▼                                                               │
-  │  [8] HITL GATE ─ pause. human approves / rejects. NEVER auto-executes. │
-  └──────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A([Proposed action<br/>from an autonomous agent]) --> G
 
-  Orchestration spine:  Microsoft Agent Framework Workflows (graph API)
-  Backend:              FastAPI + Pydantic v2, managed with uv
-  Frontend:             Next.js 15 + Tailwind v4 + React Flow 12 (hand-built SVG charts)
-  Observability:        OpenTelemetry → Arize Phoenix (local) + Azure Monitor (prod)
-  Roadmap (drawn, not built): Work IQ + Fabric IQ as added knowledge sources;
-                              durable checkpointing; probabilistic simulation;
-                              groundedness reasoning-mode; red-team ASR artifact
+    subgraph spine["Microsoft Agent Framework workflow (deterministic spine)"]
+        direction TB
+        G["1 · GUARD<br/>screen action + retrieved docs"]
+        R["2 · RETRIEVE<br/>query plan, ranked precedents,<br/>reranker scores, ref_id citations"]
+        T["3 · TRACE<br/>walk each precedent's outcomes"]
+        L["4 · LESSON<br/>one grounded, cited principle"]
+        GR["5 · GROUNDING GATE<br/>is the lesson supported?"]
+        SIM["6 · SIMULATE<br/>3 futures, seeded Monte Carlo<br/>+ DoWhy do() contrast"]
+        TR["7 · TRUST SCORE<br/>retrieval + grounding + decisiveness"]
+        H{{"8 · HUMAN GATE<br/>approve / override<br/>never auto-executes"}}
+        G --> R --> T --> L --> GR --> SIM --> TR --> H
+    end
+
+    CS["Azure AI Content Safety<br/>Prompt Shields · Groundedness"]
+    IQ["Foundry IQ<br/>Azure AI Search agentic retrieval"]
+    AOAI["Azure OpenAI<br/>gpt-4o-mini · embeddings"]
+    GRAPH["In-process NetworkX<br/>decision graph"]
+
+    CS -. screens .-> G
+    IQ == "the IQ integration" ==> R
+    GRAPH -. traverses .-> T
+    AOAI -. extracts .-> L
+    CS -. gates .-> GR
+    AOAI -. proposes levers .-> SIM
+
+    R -- "no precedent<br/>below reranker floor" --> AB([ABSTAIN<br/>escalate to a human])
+    L -- "insufficient evidence" --> AB
+    H --> OUT([Recommendation<br/>for human review])
+
+    classDef azure fill:#0a3d62,stroke:#4a90d9,color:#fff;
+    classDef iq fill:#1b4332,stroke:#22c55e,color:#fff;
+    classDef gate fill:#3d2c00,stroke:#f59e0b,color:#fff;
+    classDef abstain fill:#3d1414,stroke:#ef4444,color:#fff;
+    class CS,AOAI azure;
+    class IQ iq;
+    class H gate;
+    class AB abstain;
 ```
+
+**Spine** — Microsoft Agent Framework Workflows (graph API). **Backend** — FastAPI
+with Pydantic v2 on uv. **Frontend** — Next.js 15, Tailwind v4, and React Flow 12
+with hand-built SVG charts, over SSE. **Observability** — OpenTelemetry to Arize
+Phoenix (local) and Azure Monitor (production). **Roadmap (drawn, not built)** —
+Work IQ and Fabric IQ as added knowledge sources, durable checkpointing,
+probabilistic simulation, groundedness reasoning-mode, a red-team ASR artifact.
 
 ## 2. The chosen stack
 

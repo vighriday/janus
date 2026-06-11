@@ -1,0 +1,25 @@
+# azd project definition — `azd up` provisions the infra in infra/ and deploys
+# both services as Azure Container Apps. The service keys (api, web) match the
+# azd-service-name tags set in infra/app.bicep.
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: janus
+metadata:
+  template: janus@0.1.0
+
+services:
+  api:
+    project: ./api
+    language: python
+    host: containerapp
+    docker:
+      # Build from the repo root so the synthetic corpus (../data) is in context.
+      path: ./api/Dockerfile
+      context: .
+
+  web:
+    project: ./web
+    language: ts
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+      context: .

@@ -18,14 +18,16 @@ services:
       - ./phoenix/data:/data
 
   api:
-    build: ./api
+    build:
+      context: .
+      dockerfile: api/Dockerfile
     container_name: janus-api
     ports:
       - "8000:8000"
     env_file:
       - .env
     environment:
-      PHOENIX_COLLECTOR_ENDPOINT: "http://phoenix:6006"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://phoenix:6006/v1/traces"
     depends_on:
       - phoenix
     # The API authenticates to Azure with DefaultAzureCredential. For the local
@@ -34,7 +36,9 @@ services:
     profiles: ["full"]
 
   web:
-    build: ./web
+    build:
+      context: ./web
+      dockerfile: Dockerfile
     container_name: janus-web
     ports:
       - "3100:3100"
