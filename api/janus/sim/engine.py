@@ -29,6 +29,7 @@ class SimulationOutput:
     causal_effect: dict
     seed_manifest: str
     inputs_echo: list[dict] = field(default_factory=list)
+    dependency_anchor: float | None = None
 
 
 def _pick(results: list[ScenarioResult]) -> str:
@@ -51,8 +52,35 @@ async def simulate(
     llm: LLMClient,
     contract_value: float = _DEFAULT_CONTRACT_VALUE,
     failure_cost: float = _DEFAULT_FAILURE_COST,
+    dependency_anchor: float | None = None,
 ) -> SimulationOutput:
     scenarios = await propose_levers(action_summary, lesson, contract_value, failure_cost, llm)
+
+    # If the intercepted action carries a concrete dependency level, anchor the
+    # "approve" future to it: approve means executing the action as proposed, so
+    # its concentration risk should be the action's actual dependency, not the
+    # model's generic guess. This is the lever the operator can move — and it's
+    # what makes the recommendation provably flip: drop the dependency below the
+    # ~70% resilience knee and the approve future stops being high-risk, so the
+    # guardrail recommends it instead of forcing a modify.
+    if dependency_anchor is not None:
+        anchor = min(1.0, max(0.0, float(dependency_anchor)))
+        for s in scenarios:
+            if s.label == "approve":
+                # Approve = execute the action as proposed: its concentration is
+                # the action's actual dependency. Failure probability tracks
+                # dependency past the knee, the relationship the corpus encodes.
+                s.dependency_after = anchor
+                s.failure_prob = round(0.04 + 0.45 * max(0.0, anchor - 0.70) / 0.30, 3)
+            elif s.label == "modify":
+                # Modify = consolidate but hold the top vendor just under the 70%
+                # knee with a warm fallback — the corpus lesson made concrete.
+                # Pin it so it's always the survivable middle, never sliding into
+                # the tail with the approve future when the operator pushes the
+                # dependency up. This is the option the guardrail falls back to.
+                s.dependency_after = min(s.dependency_after, 0.65)
+                s.failure_prob = min(s.failure_prob, 0.06)
+
     results = [run_scenario(s, run_id) for s in scenarios]
     recommended = _pick(results)
 
@@ -66,4 +94,5 @@ async def simulate(
         causal_effect=causal,
         seed_manifest=run_manifest(run_id, scenarios),
         inputs_echo=[asdict(s) for s in scenarios],
+        dependency_anchor=anchor if dependency_anchor is not None else None,
     )

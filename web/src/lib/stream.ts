@@ -22,7 +22,77 @@ export interface StreamEvent {
   status: StepStatus;
   label: string;
   latency_ms: number | null;
-  payload: Record<string, unknown>;
+  payload: StepPayload;
+}
+
+// The step-specific payloads the backend attaches (api/janus/pipeline/core.py).
+// Every field is optional because a payload only carries what its step produced;
+// the renderer narrows by `kind`.
+
+export interface Precedent {
+  ref_id: number;
+  title: string;
+  score: number | null;
+}
+
+export interface TraceNode {
+  doc_id: string | null;
+  doc_type: string | null;
+  title: string | null;
+}
+
+export type RiskLabel = "low" | "elevated" | "high";
+
+export interface FutureBand {
+  label: string; // approve | modify | reject
+  p10: number;
+  p50: number;
+  p90: number;
+  risk_label: RiskLabel;
+  mean_savings: number;
+  mean_resilience_loss: number;
+  drivers: {
+    dependency_after: number;
+    resilience_multiplier: number;
+    failure_prob: number;
+  };
+}
+
+export interface CausalEffect {
+  dependency_high: number;
+  dependency_low: number;
+  resilience_loss_at_high: number;
+  resilience_loss_at_low: number;
+  resilience_saved: number;
+}
+
+export interface TrustComponents {
+  retrieval: number;
+  grounding: number;
+  decisiveness: number;
+}
+
+export interface StepPayload {
+  // retrieve
+  subqueries?: string[];
+  precedents?: Precedent[];
+  // trace
+  traces?: Record<string, TraceNode[]>;
+  // lesson
+  lesson?: string;
+  // grounding
+  ungrounded?: boolean;
+  grounded_pct?: number;
+  // simulate
+  futures?: FutureBand[];
+  recommended?: string;
+  causal_effect?: CausalEffect;
+  seed_manifest?: string;
+  dependency_anchor?: number | null;
+  // trust
+  trust?: number;
+  state?: string;
+  components?: TrustComponents;
 }
 
 export interface ProposedAction {

@@ -55,11 +55,11 @@ proposed action
 
 - **Orchestration** — Microsoft Agent Framework (Workflows graph API)
 - **Retrieval** — Foundry IQ / Azure AI Search agentic retrieval _(the one real Microsoft IQ integration)_
-- **Decision graph** — Neo4j
-- **Simulation** — seeded NumPy Monte Carlo over a transparent cost model
+- **Decision graph** — in-process NetworkX (the corpus is small; a graph server would be pure friction)
+- **Simulation** — seeded NumPy Monte Carlo over a transparent cost model, plus a DoWhy `do()` causal contrast
 - **Safety** — Azure AI Content Safety (groundedness + prompt shields) + an eval harness
 - **Backend** — FastAPI (Python)
-- **Frontend** — Next.js + Vercel AI Elements + React Flow
+- **Frontend** — Next.js + React Flow, streaming over Server-Sent Events
 
 Full detail and rationale: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 Product spec: [`docs/PRD.md`](docs/PRD.md).
@@ -83,19 +83,21 @@ through managed identity; nothing sensitive lives in this repo.
 
 ## Running it locally
 
-> Requires Docker, Python 3.11+ (managed with `uv`), Node 20+, and an Azure
-> subscription with access to Azure AI Search and Azure AI Content Safety.
+> Requires Python 3.11+ (managed with `uv`), Node 20+, and an Azure subscription
+> with access to Azure AI Search and Azure AI Content Safety. No Docker — the
+> decision graph runs in-process.
 
 ```bash
-# bring up the backend, frontend, and graph
-docker compose up
+# backend (FastAPI) on :8000
+cd api && uv run uvicorn janus.app:app --port 8000
 
-# the console is served at http://localhost:3100
+# console (Next.js) on :3100
+cd web && npm install && npm run dev
 ```
 
-Configuration goes in `.env` (see `.env.example` for the keys). The backend
-authenticates to Azure with `DefaultAzureCredential`, so `az login` is enough
-locally — no keys in the repo.
+The console is served at http://localhost:3100. Configuration goes in `.env`
+(see `.env.example` for the keys). The backend authenticates to Azure with
+`DefaultAzureCredential`, so `az login` is enough locally — no keys in the repo.
 
 ## Deploying
 

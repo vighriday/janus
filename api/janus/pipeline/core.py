@@ -172,8 +172,16 @@ async def run_janus_pipeline(action: ProposedAction) -> AsyncIterator[str]:
 
     # --- 6. SIMULATE: three futures, computed not authored ---------------------
     yield _ev(5, StepKind.simulate, StepStatus.running, "Simulating three futures")
+    # The intercepted action can carry a concrete dependency level (the share of
+    # the critical flow that would sit on the top vendor). When it does, it
+    # anchors the "approve" future — so moving this lever provably moves the
+    # recommendation, rather than the simulation guessing in a vacuum.
+    raw_dep = action.params.get("dependency_after")
+    dep_anchor = float(raw_dep) if isinstance(raw_dep, (int, float)) else None
     try:
-        sim = await simulate(action.summary, lesson, run_id="invoke", llm=llm)
+        sim = await simulate(
+            action.summary, lesson, run_id="invoke", llm=llm, dependency_anchor=dep_anchor
+        )
         sim_ok = True
     except Exception:
         logger.exception("simulation failed")
@@ -184,6 +192,7 @@ async def run_janus_pipeline(action: ProposedAction) -> AsyncIterator[str]:
             f"Simulated 3 futures — recommend: {sim.recommended}",
             futures=sim.futures, recommended=sim.recommended,
             causal_effect=sim.causal_effect, seed_manifest=sim.seed_manifest,
+            dependency_anchor=sim.dependency_anchor,
         )
     else:
         yield _ev(5, StepKind.simulate, StepStatus.failed, "Simulation unavailable")

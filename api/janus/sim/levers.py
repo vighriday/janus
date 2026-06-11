@@ -84,7 +84,12 @@ def _fallback(contract_value: float, failure_cost: float) -> list[ScenarioInputs
     """If the model refuses or returns nothing, use conservative defaults so the
     pipeline still produces a real (labeled) simulation rather than crashing."""
     return [
+        # approve: full consolidation onto one vendor — the action as proposed.
         ScenarioInputs("approve", 1, contract_value, 1.00, 0.05, 0.08, 0.12, 0.30, failure_cost),
-        ScenarioInputs("modify", 2, contract_value, 0.70, 0.05, 0.08, 0.12, 0.10, failure_cost),
+        # modify: consolidate but keep the top vendor just under the 70% knee with
+        # a warm fallback on the rest — the lesson the corpus teaches. It keeps
+        # most of the saving while staying out of the catastrophic tail, so it
+        # reads as the safe middle the guardrail can recommend.
+        ScenarioInputs("modify", 2, contract_value, 0.65, 0.05, 0.08, 0.12, 0.06, failure_cost),
         ScenarioInputs("reject", 3, contract_value, 0.55, 0.00, 0.00, 0.01, 0.04, failure_cost),
     ]

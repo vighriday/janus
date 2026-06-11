@@ -100,3 +100,28 @@ retrieval and the safety spine.
   Committed so the reliability evidence is in the repo.
 - Red-teaming deferred: the AI Red Teaming Agent needs a cloud Foundry project
   and pulls PyRIT, which risks a clash with the agent stack. Roadmap.
+
+### Phase 3 — the console — 2026-06-11
+
+- Rebuilt the frontend from the single live step-list into a command-center
+  grid: the cited lesson (with the [ref_id] citations rendered as chips that
+  highlight the precedent they rest on), a React Flow graph of the retrieved
+  precedents and the outcomes they led to, the three-futures simulation as
+  P10–P90 range bands with the recommended future called out, a trust gauge that
+  shows the three weighted signals behind the score, and the human approval gate.
+- Made the headline beat real rather than scripted: the intercepted action
+  carries a dependency level, and that number now drives the simulation — it
+  anchors the "approve" future's concentration risk. Drag the lever across the
+  70% knee, re-run, and the recommendation flips (modify → approve) because the
+  tail risk actually changes. Verified end to end through Azure: full
+  consolidation gets a "modify", capping below the knee gets an "approve".
+- Drew the outcome bands ourselves in SVG instead of through the chart library.
+  A future's bad case can be deeply negative while its good case is a modest
+  gain, and a stacked bar can't render a range that crosses zero — the
+  catastrophic tail was rendering invisible. The hand-drawn scale shows it.
+- Trimmed the frontend dependencies to what's actually imported (dropped the
+  charting library and the icon set once the panels were hand-built), which also
+  cleared a transitive advisory. Bumped PostCSS off the flagged version.
+- Re-checked the frontend stack against the current field before building:
+  React Flow and the rest held; the one charting alternative worth considering
+  was unmaintained, so it was a non-starter.
