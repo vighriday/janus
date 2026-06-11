@@ -1,9 +1,9 @@
 """FastAPI surface for JANUS.
 
-Right now this exposes a health check and a smoke-test stream that walks a
-placeholder version of the six-step pipeline. The smoke stream exists to prove
-the wire end to end — the frontend renders these events live — before the real
-pipeline steps are plugged in. Each real step will replace its placeholder here.
+Two POST endpoints stream the pipeline as Server-Sent Events: `/invoke` runs the
+real six-step pipeline (guard → retrieve → trace → lesson → grounding → simulate
+→ trust → gate); `/smoke` walks a placeholder version, kept as a no-Azure wire
+check for the frontend.
 """
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 
 from janus import __version__
 from janus.models import ProposedAction, StepKind, StepStatus, StreamEvent
+from janus.pipeline.core import run_janus_pipeline
 
 app = FastAPI(title="JANUS", version=__version__)
 
@@ -82,8 +83,6 @@ async def smoke(action: ProposedAction) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-from janus.pipeline.core import run_janus_pipeline
 
 @app.post("/invoke")
 async def invoke(action: ProposedAction) -> StreamingResponse:

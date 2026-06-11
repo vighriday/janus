@@ -23,6 +23,7 @@ from janus.clients.search import FoundryRetriever, RetrievalOutcome, doc_id_from
 from janus.config import get_settings
 from janus.models import ProposedAction, StepKind, StepStatus, StreamEvent
 from janus.models.graph import DecisionGraph
+from janus.sim.engine import simulate
 
 logger = logging.getLogger(__name__)
 
@@ -169,31 +170,74 @@ async def run_janus_pipeline(action: ProposedAction) -> AsyncIterator[str]:
         ungrounded=ungrounded, grounded_pct=grounded_pct,
     )
 
-    # --- 6. SIMULATE (Phase 2 — placeholder, labeled) -------------------------
+    # --- 6. SIMULATE: three futures, computed not authored ---------------------
     yield _ev(5, StepKind.simulate, StepStatus.running, "Simulating three futures")
-    yield _ev(5, StepKind.simulate, StepStatus.skipped, "Simulation arrives in Phase 2",
-              placeholder=True)
+    try:
+        sim = await simulate(action.summary, lesson, run_id="invoke", llm=llm)
+        sim_ok = True
+    except Exception:
+        logger.exception("simulation failed")
+        sim, sim_ok = None, False
+    if sim_ok and sim:
+        yield _ev(
+            5, StepKind.simulate, StepStatus.done,
+            f"Simulated 3 futures — recommend: {sim.recommended}",
+            futures=sim.futures, recommended=sim.recommended,
+            causal_effect=sim.causal_effect, seed_manifest=sim.seed_manifest,
+        )
+    else:
+        yield _ev(5, StepKind.simulate, StepStatus.failed, "Simulation unavailable")
 
-    # --- 7. TRUST: compose the real signals we have so far --------------------
-    # Two components, each in [0,1]: retrieval confidence (how far the top
-    # precedent cleared the 2.5 reranker floor) and grounding (how much of the
-    # lesson the sources support). A partial-ungrounded flag caps the score
-    # rather than zeroing it — 90%-grounded is not no-confidence. The simulation
-    # adds a third component in Phase 2.
+    # --- 7. TRUST: compose the real signals -----------------------------------
+    # Three components, each in [0,1]: retrieval confidence (how far the top
+    # precedent cleared the reranker floor), grounding (how supported the lesson
+    # is), and decisiveness (how clearly the recommended future beats the next
+    # alternative). A partial-ungrounded flag caps the score rather than zeroing
+    # it — a 94%-grounded lesson is provisional, not no-confidence.
+    # A score at the floor (2.5) is already a passing semantic match, so it earns
+    # a 0.3 baseline; ~3.5+ is a strong match -> 1.0. Linear between.
     top_score = max((p.reranker_score or 0.0) for p in outcome.precedents)
     floor = float(get_settings().reranker_threshold)
-    retrieval_conf = min(1.0, max(0.0, (top_score - floor) / floor)) if top_score else 0.0
+    retrieval_conf = min(1.0, max(0.0, 0.3 + 0.7 * (top_score - floor) / 1.0)) if top_score else 0.0
     grounding_conf = grounded_pct / 100
-    trust = round(0.4 * retrieval_conf + 0.6 * grounding_conf, 2)
+    decisiveness = _decisiveness(sim) if sim_ok and sim else 0.0
+    trust = round(0.3 * retrieval_conf + 0.4 * grounding_conf + 0.3 * decisiveness, 2)
     if ungrounded:
-        trust = min(trust, 0.6)  # cap, don't zero, when some claims are unsupported
+        trust = min(trust, 0.6)
     state = "ok" if trust >= 0.6 else "weak_evidence"
     yield _ev(6, StepKind.trust, StepStatus.done,
-              f"Provisional trust {int(trust * 100)}/100 "
-              f"(retrieval {int(retrieval_conf * 100)}%, grounding {grounded_pct}%)",
+              f"Trust {int(trust * 100)}/100",
               trust=trust, state=state,
-              components={"retrieval": round(retrieval_conf, 2), "grounding": round(grounding_conf, 2)})
+              components={
+                  "retrieval": round(retrieval_conf, 2),
+                  "grounding": round(grounding_conf, 2),
+                  "decisiveness": round(decisiveness, 2),
+              })
 
     # --- 8. HITL GATE ---------------------------------------------------------
-    yield _ev(7, StepKind.approval, StepStatus.running, "Awaiting human approval")
+    rec = sim.recommended if sim_ok and sim else "review"
+    yield _ev(7, StepKind.approval, StepStatus.running,
+              f"Recommend '{rec}' — awaiting human approval", recommended=rec)
     yield _ev(99, StepKind.done, StepStatus.done, "Recommendation ready for human review")
+
+
+def _decisiveness(sim) -> float:
+    """How clearly the recommended future wins among the SAFE options, in [0,1].
+
+    Compared against other non-high-risk futures only — a high-risk future the
+    guardrail already excludes shouldn't count as competition. Margin over the
+    best safe alternative, normalized by the recommended median.
+    """
+    by_label = {f["label"]: f for f in sim.futures}
+    rec = by_label.get(sim.recommended)
+    if not rec:
+        return 0.0
+    alts = [
+        f["p50"] for f in sim.futures
+        if f["label"] != sim.recommended and f["risk_label"] != "high"
+    ]
+    if not alts:
+        return 0.6  # the only safe option — a clear, if uncontested, choice
+    margin = rec["p50"] - max(alts)
+    base = max(abs(rec["p50"]), 1.0)
+    return min(1.0, max(0.0, margin / base))
