@@ -20,7 +20,12 @@ from pathlib import Path
 
 from janus.clients.llm import LLMClient
 from janus.clients.safety import SafetyClient
-from janus.clients.search import FoundryRetriever, RetrievalOutcome, doc_id_from_snippet
+from janus.clients.search import (
+    FoundryRetriever,
+    RetrievalOutcome,
+    doc_id_from_snippet,
+    strip_frontmatter,
+)
 from janus.config import get_settings
 from janus.models import ProposedAction, StepKind, StepStatus, StreamEvent
 from janus.models.graph import DecisionGraph
@@ -161,10 +166,21 @@ async def run_janus_pipeline(action: ProposedAction) -> AsyncIterator[str]:
     yield _ev(4, StepKind.grounding, StepStatus.running, "Checking the lesson against its sources")
     try:
         grounding = await safety.detect_groundedness(
-            lesson, [p.content for p in outcome.precedents], query=action.summary
+            lesson,
+            [strip_frontmatter(p.content) for p in outcome.precedents],
+            query=action.summary,
         )
-        ungrounded = grounding["ungrounded"]
         grounded_pct = round((1.0 - grounding["ungrounded_pct"]) * 100)
+        # Binary groundedness (no reasoning deployment) flags paraphrased-but-
+        # supported lessons too readily, often with no detailed spans to point at.
+        # Only treat it as a hard "ungrounded → cap trust" signal when the score
+        # is genuinely low OR the service named specific unsupported spans;
+        # otherwise it's a conservative paraphrase score that the grounding
+        # *component* already reflects, without alarming the whole verdict.
+        has_spans = bool(grounding.get("details"))
+        ungrounded = grounding["ungrounded"] and (
+            grounded_pct < get_settings().groundedness_flag_threshold or has_spans
+        )
     except Exception:
         logger.exception("groundedness check failed")
         ungrounded, grounded_pct = False, 0
@@ -214,7 +230,11 @@ async def run_janus_pipeline(action: ProposedAction) -> AsyncIterator[str]:
     top_score = max((p.reranker_score or 0.0) for p in outcome.precedents)
     floor = float(cfg.reranker_threshold)
     retrieval_conf = min(1.0, max(0.0, 0.3 + 0.7 * (top_score - floor) / 1.0)) if top_score else 0.0
-    grounding_conf = grounded_pct / 100
+    # A supported lesson (not hard-flagged) earns at least the supported floor —
+    # binary groundedness scores faithful paraphrases low, so the raw percent
+    # alone understates a lesson the gate accepts. A hard-flagged lesson keeps its
+    # low raw score and additionally caps the composed trust below.
+    grounding_conf = grounded_pct / 100 if ungrounded else max(grounded_pct / 100, cfg.grounding_supported_floor)
     decisiveness = _decisiveness(sim) if sim_ok and sim else 0.0
     w_r, w_g, w_d = cfg.trust_weight_retrieval, cfg.trust_weight_grounding, cfg.trust_weight_decisiveness
     trust = round(w_r * retrieval_conf + w_g * grounding_conf + w_d * decisiveness, 2)

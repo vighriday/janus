@@ -58,6 +58,25 @@ def doc_id_from_snippet(snippet: str) -> str:
     return ""
 
 
+def strip_frontmatter(snippet: str) -> str:
+    """Return a doc's prose with its YAML frontmatter block removed.
+
+    Retrieved snippets begin with a `---`-delimited metadata block (doc_id,
+    doc_type, title, related…). That metadata is useful for the graph join but is
+    noise to the groundedness detector, which compares a lesson against its
+    sources as plain text — leaving the frontmatter in makes the supported/
+    unsupported signal flaky. Stripping it leaves clean prose, so grounding is
+    stable. If there's no frontmatter, the text is returned unchanged.
+    """
+    s = snippet.lstrip()
+    if s.startswith("---"):
+        end = s.find("\n---", 3)
+        if end != -1:
+            nl = s.find("\n", end + 1)
+            s = s[nl + 1:] if nl != -1 else ""
+    return s.strip()
+
+
 @dataclass
 class Precedent:
     """One retrieved past decision, with the score that decided whether it counts."""

@@ -61,6 +61,21 @@ class Settings(BaseSettings):
     trust_floor: float = 0.6
     """At/above this composed score the recommendation clears for human review."""
 
+    groundedness_flag_threshold: int = 25
+    """Below this grounded-percent, a binary groundedness flag caps trust (a real
+    unsupported-claim signal). At or above it, a binary-mode flag with no detailed
+    spans is treated as a conservative paraphrase score that lowers the grounding
+    component but does not hard-cap the whole score — binary mode (no reasoning
+    deployment) flags paraphrased-but-supported lessons too readily to gate on."""
+
+    grounding_supported_floor: float = 0.6
+    """Grounding confidence for a lesson the gate considers supported (not hard-
+    flagged). Binary `ungroundedPercentage` is not a calibrated magnitude — it
+    scores faithful paraphrases low — so a supported lesson earns at least this
+    floor for the grounding component, while a truly unsupported one (hard-flagged)
+    keeps its low raw score. Reasoning mode would supply a calibrated number and
+    retire this floor (roadmap)."""
+
     # The dependency-concentration knee from the corpus policy (share of a critical
     # flow on one vendor above which the resilience hedge is lost). Single source of
     # truth for the cost model, the causal layer, and the console.

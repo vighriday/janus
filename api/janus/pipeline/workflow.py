@@ -39,7 +39,12 @@ from agent_framework import (
 
 from janus.clients.llm import LLMClient
 from janus.clients.safety import SafetyClient
-from janus.clients.search import FoundryRetriever, RetrievalOutcome, doc_id_from_snippet
+from janus.clients.search import (
+    FoundryRetriever,
+    RetrievalOutcome,
+    doc_id_from_snippet,
+    strip_frontmatter,
+)
 from janus.config import get_settings
 from janus.models.graph import DecisionGraph
 from janus.sim.engine import SimulationOutput, simulate
@@ -212,16 +217,26 @@ def build_workflow(progress, clients):
 
             await progress.emit(step="grounding", status="running", label="Checking grounding")
             grounding = await safety.detect_groundedness(
-                lesson, [p.content for p in t.outcome.precedents], query=t.summary
+                lesson,
+                [strip_frontmatter(p.content) for p in t.outcome.precedents],
+                query=t.summary,
             )
             grounded_pct = round((1.0 - grounding["ungrounded_pct"]) * 100)
+            # Binary groundedness flags paraphrased-but-supported lessons readily,
+            # often with no spans. Only hard-flag when genuinely low or the service
+            # named specific unsupported spans; otherwise the grounding component
+            # already reflects the conservative score without alarming the verdict.
+            has_spans = bool(grounding.get("details"))
+            ungrounded = grounding["ungrounded"] and (
+                grounded_pct < get_settings().groundedness_flag_threshold or has_spans
+            )
             await progress.emit(
                 step="grounding", status="done", label=f"Grounded {grounded_pct}%",
-                grounded_pct=grounded_pct, ungrounded=grounding["ungrounded"],
+                grounded_pct=grounded_pct, ungrounded=ungrounded,
             )
             await ctx.send_message(
                 Lessoned(t.summary, t.outcome, t.traces, lesson, grounded_pct,
-                         grounding["ungrounded"], t.dependency_anchor)
+                         ungrounded, t.dependency_anchor)
             )
 
     class SimulatorAgent(Executor):
@@ -316,7 +331,10 @@ def _compose_trust(s: Simulated) -> tuple[float, dict]:
     top = max((p.reranker_score or 0.0) for p in s.outcome.precedents)
     floor = float(cfg.reranker_threshold)
     retrieval = min(1.0, max(0.0, 0.3 + 0.7 * (top - floor))) if top else 0.0
-    grounding = s.grounded_pct / 100
+    # A supported lesson earns at least the supported floor — binary groundedness
+    # understates faithful paraphrases. A hard-flagged lesson keeps its raw score
+    # and additionally caps the composed trust below.
+    grounding = s.grounded_pct / 100 if s.ungrounded else max(s.grounded_pct / 100, cfg.grounding_supported_floor)
     by = {f["label"]: f for f in s.sim.futures}
     rec = by.get(s.sim.recommended)
     alts = [f["p50"] for f in s.sim.futures

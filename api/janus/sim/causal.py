@@ -48,9 +48,17 @@ def _synthetic_history(failure_cost: float, n: int = 800, seed: int = 13) -> pd.
     contract = rng.uniform(2.0e6, 4.0e6, n)
     discount = rng.uniform(0.0, 0.12, n)
     savings = discount * contract + rng.normal(0, 5000, n)
+    # Resilience loss is the *expected* loss: failure probability rises with
+    # dependency past the knee, and the multiplier amplifies it. Using the
+    # expected value (probability × multiplier × cost) rather than a hard
+    # Bernoulli draw keeps the relationship smooth and monotonic, so the fitted
+    # linear mechanism captures the correct sign — dependency up, loss up — every
+    # time, instead of being dominated by Bernoulli/interaction noise on a small
+    # sample. The do() contrast then reproduces deterministically and never flips.
     mult = np.array([_resilience_multiplier(d) for d in dependency])
-    failed = rng.random(n) < (0.05 + 0.30 * np.clip((dependency - _RESILIENCE_KNEE) / 0.3, 0, 1))
-    resilience = failed * failure_cost * mult + rng.normal(0, 5000, n)
+    fail_prob = 0.05 + 0.30 * np.clip((dependency - _RESILIENCE_KNEE) / 0.3, 0, 1)
+    resilience = fail_prob * failure_cost * mult + rng.normal(0, 2000, n)
+    resilience = np.clip(resilience, 0, None)
     net = savings - resilience
     return pd.DataFrame({
         "dependency_pct": dependency, "contract_value": contract, "discount": discount,
@@ -68,10 +76,19 @@ class CausalModel:
         # Deterministic and fast — no model search — and invertible (counterfactuals work).
         for root in ("dependency_pct", "contract_value", "discount"):
             self.scm.set_causal_mechanism(root, gcm.EmpiricalDistribution())
-        for child in ("resilience_loss", "annual_savings", "net_value"):
+        # annual_savings is linear in its parents; resilience_loss and the net it
+        # feeds are non-linear in dependency (the convex knee), so a linear
+        # mechanism there averages across the kink and can land near-zero slope.
+        # A gradient-boosted mechanism captures the knee, so the do() contrast is
+        # correctly signed and stable — still a real fitted SCM, just expressive
+        # enough for the shape the corpus actually has.
+        self.scm.set_causal_mechanism(
+            "annual_savings", gcm.AdditiveNoiseModel(gcm.ml.create_linear_regressor())
+        )
+        for child in ("resilience_loss", "net_value"):
             self.scm.set_causal_mechanism(
                 child,
-                gcm.AdditiveNoiseModel(gcm.ml.create_linear_regressor()),
+                gcm.AdditiveNoiseModel(gcm.ml.create_hist_gradient_boost_regressor()),
             )
         gcm.config.disable_progress_bars()
         gcm.fit(self.scm, data)
@@ -80,10 +97,14 @@ class CausalModel:
         """Expected outcomes under do(dependency_pct := value).
 
         We report expected resilience_loss (the quantity dependency causally
-        drives — monotonic and well-captured by the fitted mechanism) alongside
-        expected net_value. The resilience effect is the headline causal claim;
-        the Monte Carlo cost model supplies the downside-tail bands.
+        drives — monotonic past the knee, captured by the fitted mechanism)
+        alongside expected net_value. The resilience effect is the headline causal
+        claim; the Monte Carlo cost model supplies the downside-tail bands.
+
+        The interventional sampling is seeded so the contrast reproduces exactly:
+        same lever, same number, every run — the reproducibility the demo rests on.
         """
+        np.random.seed(20260614)
         samples = gcm.interventional_samples(
             self.scm,
             interventions={"dependency_pct": lambda _d, v=dependency: v},

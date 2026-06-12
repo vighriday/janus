@@ -20,6 +20,10 @@ function pct(v: number): string {
 
 export function CausalContrast({ causal }: { causal: CausalEffect }) {
   const saved = causal.resilience_saved;
+  // The expected, well-behaved case is that cutting dependency cuts loss (saved >
+  // 0). Guard the copy on the sign so the sentence can never contradict the
+  // numbers: if a fit ever inverted it, the verb and colour follow the data.
+  const cuts = saved >= 0;
   return (
     <div className="flex flex-col gap-3">
       <div
@@ -38,8 +42,11 @@ export function CausalContrast({ causal }: { causal: CausalEffect }) {
           <span className="font-semibold tabular-nums" style={{ color: "var(--ok)" }}>
             {pct(causal.dependency_low)}
           </span>{" "}
-          cuts expected resilience loss by{" "}
-          <span className="font-semibold tabular-nums" style={{ color: "var(--ok)" }}>
+          {cuts ? "cuts expected resilience loss by" : "raises expected resilience loss by"}{" "}
+          <span
+            className="font-semibold tabular-nums"
+            style={{ color: cuts ? "var(--ok)" : "var(--danger)" }}
+          >
             {money(saved)}
           </span>
           .
