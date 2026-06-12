@@ -37,17 +37,20 @@ from janus.sim.engine import SimulationOutput, simulate
 @dataclass
 class Proposal:
     summary: str
+    dependency_anchor: float | None = None
 
 
 @dataclass
 class Guarded:
     summary: str
+    dependency_anchor: float | None = None
 
 
 @dataclass
 class Retrieved:
     summary: str
     outcome: RetrievalOutcome
+    dependency_anchor: float | None = None
 
 
 @dataclass
@@ -55,6 +58,7 @@ class Traced:
     summary: str
     outcome: RetrievalOutcome
     traces: dict
+    dependency_anchor: float | None = None
 
 
 @dataclass
@@ -65,6 +69,7 @@ class Lessoned:
     lesson: str
     grounded_pct: int
     ungrounded: bool
+    dependency_anchor: float | None = None
 
 
 @dataclass
@@ -114,7 +119,7 @@ def build_workflow(progress, clients):
                 await ctx.yield_output("blocked: injection")
                 return
             await progress.emit(step="guard", status="done", label="Action screened — clear")
-            await ctx.send_message(Guarded(p.summary))
+            await ctx.send_message(Guarded(p.summary, p.dependency_anchor))
 
     class Retrieve(Executor):
         def __init__(self) -> None:
@@ -123,7 +128,9 @@ def build_workflow(progress, clients):
         @handler
         async def run(self, g: Guarded, ctx: WorkflowContext[Retrieved]) -> None:
             await progress.emit(step="retrieve", status="running", label="Searching decision history")
-            outcome = retriever.retrieve(g.summary)
+            # Retrieval is a synchronous SDK call; run it off the event loop so it
+            # doesn't block other requests for the duration of the Azure round-trip.
+            outcome = await asyncio.to_thread(retriever.retrieve, g.summary)
             if outcome.abstained or not outcome.precedents:
                 await progress.emit(step="retrieve", status="done", label="No analogous precedent")
                 await ctx.yield_output("abstain: no precedent")
@@ -137,7 +144,7 @@ def build_workflow(progress, clients):
                 ],
                 subqueries=outcome.subqueries,
             )
-            await ctx.send_message(Retrieved(g.summary, outcome))
+            await ctx.send_message(Retrieved(g.summary, outcome, g.dependency_anchor))
 
     class Trace(Executor):
         def __init__(self) -> None:
@@ -155,7 +162,7 @@ def build_workflow(progress, clients):
                         for n in graph.get_related_outcomes(doc_id)
                     ]
             await progress.emit(step="trace", status="done", label="Traced outcomes", traces=traces)
-            await ctx.send_message(Traced(r.summary, r.outcome, traces))
+            await ctx.send_message(Traced(r.summary, r.outcome, traces, r.dependency_anchor))
 
     class Lesson(Executor):
         def __init__(self) -> None:
@@ -188,7 +195,8 @@ def build_workflow(progress, clients):
                 grounded_pct=grounded_pct, ungrounded=grounding["ungrounded"],
             )
             await ctx.send_message(
-                Lessoned(t.summary, t.outcome, t.traces, lesson, grounded_pct, grounding["ungrounded"])
+                Lessoned(t.summary, t.outcome, t.traces, lesson, grounded_pct,
+                         grounding["ungrounded"], t.dependency_anchor)
             )
 
     class Simulate(Executor):
@@ -198,12 +206,17 @@ def build_workflow(progress, clients):
         @handler
         async def run(self, ls: Lessoned, ctx: WorkflowContext[Simulated]) -> None:
             await progress.emit(step="simulate", status="running", label="Simulating three futures")
-            sim = await simulate(ls.summary, ls.lesson, run_id="workflow", llm=llm)
+            sim = await simulate(
+                ls.summary, ls.lesson, run_id="workflow", llm=llm,
+                dependency_anchor=ls.dependency_anchor,
+            )
             await progress.emit(
                 step="simulate", status="done",
                 label=f"Simulated 3 futures — recommend: {sim.recommended}",
                 futures=sim.futures, recommended=sim.recommended,
                 causal_effect=sim.causal_effect, seed_manifest=sim.seed_manifest,
+                dependency_anchor=sim.dependency_anchor,
+                concentration_knee=get_settings().concentration_knee,
             )
             await ctx.send_message(
                 Simulated(ls.summary, ls.outcome, ls.lesson, ls.grounded_pct, ls.ungrounded, sim)
@@ -219,9 +232,16 @@ def build_workflow(progress, clients):
         async def run(self, s: Simulated, ctx: WorkflowContext[None]) -> None:
             await progress.emit(step="trust", status="running", label="Composing the trust score")
             trust = _compose_trust(s)
+            cfg = get_settings()
             await progress.emit(
                 step="trust", status="done", label=f"Trust {int(trust * 100)}/100",
-                trust=trust, state="ok" if trust >= 0.6 else "weak_evidence",
+                trust=trust, floor=cfg.trust_floor,
+                state="ok" if trust >= cfg.trust_floor else "weak_evidence",
+                weights={
+                    "retrieval": cfg.trust_weight_retrieval,
+                    "grounding": cfg.trust_weight_grounding,
+                    "decisiveness": cfg.trust_weight_decisiveness,
+                },
             )
             await progress.emit(
                 step="approval", status="running",
@@ -258,8 +278,9 @@ def build_workflow(progress, clients):
 
 
 def _compose_trust(s: Simulated) -> float:
+    cfg = get_settings()
     top = max((p.reranker_score or 0.0) for p in s.outcome.precedents)
-    floor = float(get_settings().reranker_threshold)
+    floor = float(cfg.reranker_threshold)
     retrieval = min(1.0, max(0.0, 0.3 + 0.7 * (top - floor))) if top else 0.0
     grounding = s.grounded_pct / 100
     by = {f["label"]: f for f in s.sim.futures}
@@ -269,16 +290,26 @@ def _compose_trust(s: Simulated) -> float:
     decisiveness = 0.6
     if rec and alts:
         decisiveness = min(1.0, max(0.0, (rec["p50"] - max(alts)) / max(abs(rec["p50"]), 1.0)))
-    trust = round(0.3 * retrieval + 0.4 * grounding + 0.3 * decisiveness, 2)
-    return min(trust, 0.6) if s.ungrounded else trust
+    trust = round(
+        cfg.trust_weight_retrieval * retrieval
+        + cfg.trust_weight_grounding * grounding
+        + cfg.trust_weight_decisiveness * decisiveness,
+        2,
+    )
+    return min(trust, cfg.trust_floor) if s.ungrounded else trust
+
+
+# Clients are built once and shared (each holds a credential + an httpx client).
+# Rebuilding them per request leaks connections and credentials.
+_CLIENTS: tuple | None = None
+_GRAPH: DecisionGraph | None = None
 
 
 def make_clients():
-    return (SafetyClient(), FoundryRetriever(), LLMClient(),
-            _load_graph())
-
-
-_GRAPH: DecisionGraph | None = None
+    global _CLIENTS
+    if _CLIENTS is None:
+        _CLIENTS = (SafetyClient(), FoundryRetriever(), LLMClient(), _load_graph())
+    return _CLIENTS
 
 
 def _load_graph() -> DecisionGraph:
@@ -297,58 +328,119 @@ _STEP_INDEX = {
 }
 
 
-async def run_workflow_pipeline(summary: str, auto_approve: bool = True) -> AsyncIterator[str]:
-    """Drive the MAF workflow and stream its progress as SSE frames.
-
-    The workflow executors push step updates onto the progress queue while the
-    graph runs; we drain that queue into SSE. At the human-in-the-loop pause the
-    workflow emits a request_info event — for the non-interactive `/invoke` path
-    we auto-approve and resume; an interactive client would surface the request
-    and resume with the human's decision.
-    """
+def _frame(kw: dict) -> str:
     from janus.models import StepKind, StepStatus, StreamEvent
 
+    idx = _STEP_INDEX.get(kw["step"], 90)
+    kind = StepKind(kw["step"]) if kw["step"] in StepKind.__members__.values() else StepKind.done
+    payload = {k: v for k, v in kw.items() if k not in ("step", "status", "label")}
+    return StreamEvent(
+        id=f"step-{idx}-{kw['step']}", kind=kind,
+        status=StepStatus(kw["status"]), label=kw["label"], payload=payload,
+    ).to_sse()
+
+
+def _error_frame(message: str) -> str:
+    from janus.models import StepKind, StepStatus, StreamEvent
+
+    return StreamEvent(
+        id="step-90-error", kind=StepKind.error, status=StepStatus.failed, label=message
+    ).to_sse()
+
+
+@dataclass
+class _PausedRun:
+    """A workflow paused at the human gate, held server-side until the operator
+    decides. The same in-memory workflow object is required to resume, so it
+    lives in the registry keyed by run id across the two HTTP requests."""
+
+    workflow: object
+    progress: "_Progress"
+    request_id: str
+
+
+# The run registry — the answer to "workflow state across the approval
+# round-trip." Keyed by run id; entries are popped on resume or timed out.
+_RUNS: dict[str, _PausedRun] = {}
+_MAX_RUNS = 32
+
+
+async def _drain(stream, progress, frames: list[str]) -> object | None:
+    """Forward queued progress as SSE frames; return a pending request_info
+    event if the workflow paused, else None. Never raises — an executor error
+    becomes a terminal error frame so the stream always closes cleanly."""
+    request = None
+    try:
+        async for event in stream:
+            if getattr(event, "type", None) == "request_info":
+                request = event
+            while not progress.queue.empty():
+                frames.append(_frame(progress.queue.get_nowait()))
+    except Exception as exc:  # noqa: BLE001 - surface, don't drop the stream
+        frames.append(_error_frame(f"Pipeline error: {exc}"))
+        return None
+    while not progress.queue.empty():
+        frames.append(_frame(progress.queue.get_nowait()))
+    return request
+
+
+async def run_workflow_pipeline(
+    summary: str, run_id: str, dependency_anchor: float | None = None, auto_approve: bool = False
+) -> AsyncIterator[str]:
+    """Drive the MAF workflow to the human gate and stream its progress as SSE.
+
+    Runs to the request_info pause and stops there, registering the paused
+    workflow under `run_id` so a second request (`resume_workflow`) can resume it
+    with the human's decision. When `auto_approve` is set the gate is resolved
+    in-process (used by the plain `/invoke` path, which has no separate gate UI).
+    """
     progress = _Progress()
     workflow = build_workflow(progress, make_clients())
 
-    def _frame(kw: dict) -> str:
-        idx = _STEP_INDEX.get(kw["step"], 90)
-        kind = StepKind(kw["step"]) if kw["step"] in StepKind.__members__.values() else StepKind.done
-        payload = {k: v for k, v in kw.items() if k not in ("step", "status", "label")}
-        return StreamEvent(
-            id=f"step-{idx}-{kw['step']}", kind=kind,
-            status=StepStatus(kw["status"]), label=kw["label"], payload=payload,
-        ).to_sse()
-
-    async def _drain_until_idle(stream) -> dict | None:
-        """Consume the event stream, forwarding progress; return a pending
-        request_info event (if the workflow paused) else None."""
-        request = None
-        async for event in stream:
-            etype = getattr(event, "type", None)
-            if etype == "request_info":
-                request = event
-            # drain whatever progress the executors queued so far
-            while not progress.queue.empty():
-                frames.append(_frame(progress.queue.get_nowait()))
-        while not progress.queue.empty():
-            frames.append(_frame(progress.queue.get_nowait()))
-        return request
-
-    # Run the graph; collect frames as they're produced. We interleave by
-    # draining the queue between awaits.
     frames: list[str] = []
-
-    # First pass: run to the HITL pause.
-    pending = await _drain_until_idle(workflow.run(stream=True, message=Proposal(summary)))
+    pending = await _drain(
+        workflow.run(stream=True, message=Proposal(summary, dependency_anchor)), progress, frames
+    )
     for f in frames:
         yield f
     frames.clear()
 
-    # Resume past the human gate.
-    if pending is not None and auto_approve:
-        rid = getattr(pending, "request_id", None)
-        if rid:
-            await _drain_until_idle(workflow.run(stream=True, responses={rid: True}))
-            for f in frames:
-                yield f
+    if pending is None:
+        return  # abstained / blocked / errored before the gate
+
+    rid = getattr(pending, "request_id", None)
+    if rid is None:
+        return
+
+    if auto_approve:
+        await _drain(workflow.run(stream=True, responses={rid: True}), progress, frames)
+        for f in frames:
+            yield f
+        return
+
+    # Real HITL: hold the paused workflow for a second request to resume, and
+    # tell the client which run id to resume.
+    if len(_RUNS) >= _MAX_RUNS:
+        _RUNS.pop(next(iter(_RUNS)))  # evict the oldest; this is a demo-scale cap
+    _RUNS[run_id] = _PausedRun(workflow=workflow, progress=progress, request_id=rid)
+    yield _frame({"step": "approval", "status": "running",
+                  "label": "Awaiting human approval", "run_id": run_id, "awaiting": True})
+
+
+async def resume_workflow(run_id: str, approved: bool) -> AsyncIterator[str]:
+    """Resume a paused run with the human's decision and stream the rest.
+
+    Idempotent: a second call for the same run id (a double-click) finds no
+    entry and yields a single already-resolved frame rather than erroring."""
+    paused = _RUNS.pop(run_id, None)
+    if paused is None:
+        yield _frame({"step": "done", "status": "done", "label": "This decision was already recorded."})
+        return
+    frames: list[str] = []
+    await _drain(
+        paused.workflow.run(stream=True, responses={paused.request_id: approved}),
+        paused.progress,
+        frames,
+    )
+    for f in frames:
+        yield f

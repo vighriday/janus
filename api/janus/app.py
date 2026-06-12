@@ -9,16 +9,24 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from janus import __version__
 from janus.models import ProposedAction, StepKind, StepStatus, StreamEvent
 from janus.pipeline.core import run_janus_pipeline
-from janus.pipeline.workflow import run_workflow_pipeline
+from janus.pipeline.workflow import resume_workflow, run_workflow_pipeline
 from janus.telemetry import setup_telemetry
+
+
+class HumanDecision(BaseModel):
+    """The operator's call at the approval gate."""
+
+    approved: bool
 
 # Install the OpenTelemetry tracer + exporters at import. No-op when no collector
 # is configured, so this is safe in every environment including tests.
@@ -103,8 +111,27 @@ async def invoke(action: ProposedAction) -> StreamingResponse:
 
 @app.post("/invoke-workflow")
 async def invoke_workflow(action: ProposedAction) -> StreamingResponse:
-    """Run the JANUS pipeline over SSE through the Microsoft Agent Framework
-    workflow graph — the deterministic spine with the human-in-the-loop gate."""
+    """Run the JANUS pipeline through the Microsoft Agent Framework workflow graph
+    — the deterministic spine with a real human-in-the-loop pause. Streams to the
+    approval gate and stops; the run is held server-side under `run_id` until a
+    POST to /resume/{run_id} resolves it."""
+    run_id = uuid4().hex
+    raw_dep = action.params.get("dependency_after")
+    dep = float(raw_dep) if isinstance(raw_dep, (int, float)) else None
     return StreamingResponse(
-        run_workflow_pipeline(action.summary), media_type="text/event-stream", headers=_SSE_HEADERS
+        run_workflow_pipeline(action.summary, run_id=run_id, dependency_anchor=dep, auto_approve=False),
+        media_type="text/event-stream",
+        headers={**_SSE_HEADERS, "X-Janus-Run-Id": run_id},
+    )
+
+
+@app.post("/resume/{run_id}")
+async def resume(run_id: str, decision: HumanDecision) -> StreamingResponse:
+    """Resolve a paused workflow with the human's decision and stream the rest.
+    This is the second half of the approval round-trip — the same in-memory
+    workflow object, resumed via the server-side run registry."""
+    return StreamingResponse(
+        resume_workflow(run_id, decision.approved),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
     )

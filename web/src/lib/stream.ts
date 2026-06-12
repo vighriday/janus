@@ -96,6 +96,9 @@ export interface StepPayload {
   floor?: number;
   components?: TrustComponents;
   weights?: TrustComponents;
+  // approval gate (workflow path)
+  run_id?: string;
+  awaiting?: boolean;
 }
 
 export interface ProposedAction {
@@ -108,29 +111,11 @@ export interface ProposedAction {
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
-/**
- * POST a proposed action and yield pipeline events as they stream in.
- *
- * Uses fetch + a streamed body reader rather than EventSource because the
- * request is a POST with a JSON body. The frame format is plain SSE
- * (`data: {json}\n\n`), so a future swap to AI Elements' transport is a
- * drop-in — this is the raw fallback the architecture calls for.
- */
-export async function* runPipeline(
-  action: ProposedAction,
-  path = "/smoke",
-  signal?: AbortSignal,
-): AsyncGenerator<StreamEvent> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(action),
-    signal,
-  });
+/** Read an SSE response body and yield each `data:` frame as a StreamEvent. */
+async function* readSse(res: Response): AsyncGenerator<StreamEvent> {
   if (!res.ok || !res.body) {
-    throw new Error(`pipeline request failed: ${res.status}`);
+    throw new Error(`request failed: ${res.status}`);
   }
-
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -140,7 +125,6 @@ export async function* runPipeline(
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 
-    // SSE events are separated by a blank line.
     let sep: number;
     while ((sep = buffer.indexOf("\n\n")) !== -1) {
       const frame = buffer.slice(0, sep);
@@ -156,4 +140,41 @@ export async function* runPipeline(
       }
     }
   }
+}
+
+/**
+ * POST a proposed action and yield pipeline events as they stream in.
+ *
+ * Uses fetch + a streamed body reader rather than EventSource because the
+ * request is a POST with a JSON body. On the workflow path the stream stops at
+ * the approval gate (an `awaiting` frame carrying a `run_id`); resume it with
+ * `resumePipeline`.
+ */
+export async function* runPipeline(
+  action: ProposedAction,
+  path = "/smoke",
+  signal?: AbortSignal,
+): AsyncGenerator<StreamEvent> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(action),
+    signal,
+  });
+  yield* readSse(res);
+}
+
+/** Resolve a paused workflow run with the human's decision and stream the rest. */
+export async function* resumePipeline(
+  runId: string,
+  approved: boolean,
+  signal?: AbortSignal,
+): AsyncGenerator<StreamEvent> {
+  const res = await fetch(`${API_BASE}/resume/${runId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ approved }),
+    signal,
+  });
+  yield* readSse(res);
 }

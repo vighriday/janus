@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useMemo } from "react";
-import { runPipeline, type StreamEvent, type StepKind, type StepStatus } from "@/lib/stream";
+import { runPipeline, resumePipeline, type StreamEvent, type StepKind, type StepStatus } from "@/lib/stream";
 import { Panel } from "@/components/Panel";
 import { ActionBar } from "@/components/ActionBar";
 import { LessonPanel } from "@/components/LessonPanel";
@@ -41,7 +41,22 @@ export default function Home() {
   const [running, setRunning] = useState(false);
   const [activeRef, setActiveRef] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Fold a stream of events into the per-kind map and the live log.
+  const ingest = useCallback((ev: StreamEvent) => {
+    setByKind((prev) => new Map(prev).set(ev.kind, ev));
+    if (ev.payload.run_id) setRunId(ev.payload.run_id);
+    setLog((prev) => {
+      const i = prev.findIndex((e) => e.id === ev.id);
+      const row = { id: ev.id, label: ev.label, status: ev.status };
+      if (i === -1) return [...prev, row];
+      const next = [...prev];
+      next[i] = row;
+      return next;
+    });
+  }, []);
 
   const run = useCallback(async () => {
     abortRef.current?.abort();
@@ -51,6 +66,7 @@ export default function Home() {
     setLog([]);
     setActiveRef(null);
     setError(null);
+    setRunId(null);
     setRunning(true);
     const action = {
       action: SCENARIO.action,
@@ -62,16 +78,10 @@ export default function Home() {
       },
     };
     try {
-      for await (const ev of runPipeline(action, "/invoke", ac.signal)) {
-        setByKind((prev) => new Map(prev).set(ev.kind, ev));
-        setLog((prev) => {
-          const i = prev.findIndex((e) => e.id === ev.id);
-          const row = { id: ev.id, label: ev.label, status: ev.status };
-          if (i === -1) return [...prev, row];
-          const next = [...prev];
-          next[i] = row;
-          return next;
-        });
+      // The workflow path runs the Microsoft Agent Framework spine and stops at
+      // the human gate; the run is held server-side until the operator decides.
+      for await (const ev of runPipeline(action, "/invoke-workflow", ac.signal)) {
+        ingest(ev);
       }
     } catch (err) {
       if (!ac.signal.aborted) {
@@ -83,7 +93,25 @@ export default function Home() {
     } finally {
       setRunning(false);
     }
-  }, [dependency]);
+  }, [dependency, ingest]);
+
+  // The human's decision at the gate: resume the paused workflow over the wire.
+  const decide = useCallback(
+    async (approved: boolean) => {
+      if (!runId) return;
+      const ac = new AbortController();
+      try {
+        for await (const ev of resumePipeline(runId, approved, ac.signal)) {
+          ingest(ev);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setRunId(null);
+      }
+    },
+    [runId, ingest],
+  );
 
   const retrieve = byKind.get("retrieve");
   const trace = byKind.get("trace");
@@ -210,7 +238,13 @@ export default function Home() {
         {/* Approval gate */}
         <Panel title="Human approval" state={panelState(approval)}>
           {recommended ? (
-            <ApprovalGate recommended={recommended} lesson={lessonText} futures={futures} />
+            <ApprovalGate
+              recommended={recommended}
+              lesson={lessonText}
+              futures={futures}
+              awaiting={runId != null}
+              onDecide={decide}
+            />
           ) : (
             <Empty label="JANUS recommends; a human approves or overrides." />
           )}

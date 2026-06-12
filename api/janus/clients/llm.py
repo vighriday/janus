@@ -21,11 +21,17 @@ class LLMClient:
             azure_endpoint=self.settings.azure_openai_endpoint,
             api_version=self.settings.azure_openai_api_version,
             azure_ad_token_provider=token_provider,
+            # Bound every call so a hung socket can't stall the SSE stream.
+            timeout=30.0,
+            max_retries=1,
         )
 
     async def chat_complete(
         self, messages: list[dict], deployment: str | None = None, **kwargs
     ) -> str:
+        # Cap output so a runaway/echoing response can't inflate latency or the
+        # payload. Callers can override.
+        kwargs.setdefault("max_tokens", 800)
         response = await self.client.chat.completions.create(
             model=deployment or self.settings.azure_openai_chat_deployment,
             messages=messages,

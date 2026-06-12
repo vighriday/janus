@@ -28,10 +28,14 @@ export function ApprovalGate({
   recommended,
   lesson,
   futures,
+  awaiting,
+  onDecide,
 }: {
   recommended: string;
   lesson?: string;
   futures?: FutureBand[];
+  awaiting?: boolean;
+  onDecide?: (approved: boolean) => void;
 }) {
   const [decision, setDecision] = useState<Decision>(null);
   const meta = VERDICT_META[recommended] ?? VERDICT_META.review;
@@ -39,6 +43,14 @@ export function ApprovalGate({
   // The justification is the grounded lesson (first sentence) plus the recommended
   // future's own modelled median — both produced by the run, not authored here.
   const lessonLead = lesson?.split(/(?<=\.)\s/)[0] ?? "";
+
+  // When the workflow is paused server-side (awaiting), the buttons resume the
+  // real run over the wire; the decision is resolved by the backend, not faked
+  // in local state.
+  const choose = (d: Exclude<Decision, null>) => {
+    setDecision(d);
+    onDecide?.(d === "approved");
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -73,15 +85,17 @@ export function ApprovalGate({
       {decision == null ? (
         <div className="flex gap-2">
           <button
-            onClick={() => setDecision("approved")}
-            className="flex-1 rounded-md px-3 py-2 text-xs font-semibold transition"
+            onClick={() => choose("approved")}
+            disabled={!awaiting}
+            className="flex-1 rounded-md px-3 py-2 text-xs font-semibold transition disabled:opacity-50"
             style={{ background: "var(--ok)", color: "#0a0a0b" }}
           >
             Approve recommendation
           </button>
           <button
-            onClick={() => setDecision("overridden")}
-            className="flex-1 rounded-md border px-3 py-2 text-xs font-medium transition"
+            onClick={() => choose("overridden")}
+            disabled={!awaiting}
+            className="flex-1 rounded-md border px-3 py-2 text-xs font-medium transition disabled:opacity-50"
             style={{ borderColor: "var(--border)", color: "var(--text)" }}
           >
             Override
@@ -97,11 +111,8 @@ export function ApprovalGate({
           }}
         >
           {decision === "approved"
-            ? `Human approved the “${meta.title.toLowerCase()}” recommendation. Action released for execution.`
-            : "Human overrode the recommendation. Logged for review — nothing executed."}
-          <button onClick={() => setDecision(null)} className="ml-2 underline" style={{ color: "var(--text-dim)" }}>
-            reset
-          </button>
+            ? `Human approved the “${meta.title.toLowerCase()}” recommendation. The workflow resumed and recorded it.`
+            : "Human overrode the recommendation. The workflow resumed and logged it — nothing executed."}
         </div>
       )}
 
