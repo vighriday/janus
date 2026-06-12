@@ -4,8 +4,10 @@ Runs Azure AI Evaluation's groundedness, relevance, and retrieval judges over a
 fixed set of decision cases — the same lesson-extraction-from-sources task the
 live pipeline performs — and writes a scorecard. The scorecard is committed so
 the Reliability evidence exists in the repo even if a live run is flaky on demo
-day; it uses the same Content-Safety-aligned judge the runtime gate uses, so the
-offline number predicts live behaviour.
+day. It uses azure-ai-evaluation's GroundednessEvaluator — a separate LLM judge
+over the same lesson-vs-sources task — so the scorecard is a correlated proxy
+for, not an identical measurement of, the live Content Safety detectGroundedness
+gate (which runs in binary mode today).
 
 Keyless: the judge model authenticates with the dev identity (Cognitive Services
 OpenAI User on the Azure OpenAI account). Run:

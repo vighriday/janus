@@ -145,9 +145,9 @@ flags an extracted principle that isn't supported by its sources and drives
 abstention (binary mode today; segment-level reasoning mode is roadmap, gated by
 a model-deprecation issue — see §3a). Prompt Shields screen both the action and
 the retrieved docs (direct + indirect/XPIA). The offline azure-ai-evaluation
-harness uses the *same* Content-Safety-aligned groundedness, so the committed
-scorecard and the live gate measure the same thing — no drift between eval and
-production. A guardrail that hasn't been attacked is a red flag, so a committed
+harness uses a *separate* LLM judge (GroundednessEvaluator) over the same
+lesson-vs-sources task, so the committed scorecard is a correlated proxy for the
+live Content Safety gate, not an identical measurement of it. A guardrail that hasn't been attacked is a red flag, so a committed
 red-team probe (`janus.scripts.red_team`) fires direct and indirect/XPIA
 injections at the Prompt Shields and records the block rate, with clean inputs to
 catch over-blocking. The broader cloud AI Red Teaming Agent (PyRIT) is roadmap —

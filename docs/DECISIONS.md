@@ -128,11 +128,14 @@ an outcome range that crosses zero — which a stacked bar can't.
 
 Content Safety groundedness drives abstention (binary mode today; segment-level
 reasoning mode is roadmap, gated by a model-deprecation issue); Prompt Shields
-screen the action *and* the retrieved docs; the offline eval harness uses the same
-Content-Safety-aligned groundedness so the scorecard predicts live behaviour. A
-red-team attack-success-rate artifact is roadmap — an unaudited guardrail is a red
-flag, so it's planned, but it needs a cloud Foundry project and risks a dependency
-clash, so it isn't on the live path yet.
+screen the action *and* the retrieved docs; the offline eval harness uses a
+separate LLM judge (azure-ai-evaluation's GroundednessEvaluator) over the same
+lesson-vs-sources task, so the scorecard is a correlated proxy for the live gate,
+not an identical measurement of it. An unaudited guardrail is a red flag, so a
+committed red-team probe (`janus.scripts.red_team`) fires direct and indirect/XPIA
+injections at the Prompt Shields and records the block rate
+(`data/eval/redteam.json`). The cloud AI Red Teaming Agent remains roadmap — it
+needs a cloud Foundry project and risks a dependency clash.
 
 ### Infra: FastAPI + uv, azd to Container Apps
 
