@@ -1,12 +1,15 @@
 # JANUS
 
-**A decision guardrail for autonomous enterprise agents.**
+**A decision guardrail for autonomous enterprise agents. Everyone else builds a
+librarian — this is the guardrail in front of the action.**
 
-Before an AI agent executes a proposed action, JANUS intercepts it, checks it
-against the organization's recorded past decisions and their outcomes, and returns
-a cited, grounded recommendation — approve, modify, or reject — for a human to
-sign off. It is decision support with a human in the loop. **It never executes
-anything on its own.**
+Before an AI agent executes a proposed action, JANUS *intercepts* it, retrieves
+analogous past org decisions and their outcomes through **Foundry IQ**, simulates
+three futures, and returns a cited, grounded recommendation — approve, modify, or
+reject — for a human to sign off. Knowledge tools answer questions *when asked*;
+by then the agent has already decided. JANUS doesn't wait. It is decision support
+with a human in the loop, and **by construction it never executes anything on its
+own.**
 
 ![track](https://img.shields.io/badge/Agents_League-Reasoning_Agents-6366f1)
 ![iq](https://img.shields.io/badge/Microsoft_IQ-Foundry_IQ-22c55e)
@@ -16,6 +19,26 @@ anything on its own.**
 > Built for the Microsoft Agents League @ AI Skills Fest 2026 — Reasoning Agents
 > track. **Foundry IQ** (Azure AI Search agentic retrieval) is the real,
 > load-bearing intelligence layer.
+> Repo: **[github.com/vighriday/janus](https://github.com/vighriday/janus)**
+
+![The JANUS console at the moment the recommendation is gated — the dependency lever sits past the 70% concentration knee, the futures panel shows the catastrophic tail on full consolidation, a cited lesson with reranker-scored precedents is on the left, and the human approval gate is still pending.](docs/assets/console.png)
+
+## At a glance
+
+- **Real Foundry IQ agentic retrieval** — query planning, reranker scores, and a
+  `[ref_id]` citation on every claim. Below the reranker floor, it abstains rather
+  than guess.
+- **A real human-in-the-loop gate** — the Microsoft Agent Framework workflow pauses
+  server-side at `request_info`; a second HTTP request resumes the *same* workflow
+  object. Double-clicks are idempotent.
+- **A provable causal flip** — move one input across the 70% concentration knee and
+  the recommendation changes, driven by the simulated tail, not a script.
+- **Measured safety, not asserted** — a committed red-team probe: **84.6% injection
+  block rate** (direct + indirect/XPIA), **zero false positives** on clean inputs.
+- **Grounded and evaluated** — a 22-case scorecard: **4.68 / 5 groundedness** (100%
+  pass), **4.36 / 5 relevance** (91% pass).
+- **Keyless and deployable** — `DefaultAzureCredential` throughout; `azd up`
+  provisions the whole stack from Bicep.
 
 ---
 
@@ -24,11 +47,12 @@ anything on its own.**
 Enterprises are starting to hand operational decisions to autonomous agents. Those
 agents inherit the company's documents and data — but not the lessons it learned
 the hard way, the constraints that only became visible after something broke. So
-they confidently repeat mistakes the organization already paid for.
+they confidently repeat mistakes the organization already paid for, with no memory
+that the bill was already settled once.
 
-Most enterprise-knowledge tools answer questions *when asked*. That's the wrong
-moment — by then the agent has usually already decided. JANUS doesn't wait. It
-sits in front of the action and intercepts it.
+A retrieval tool would let you *ask* whether this has gone wrong before. JANUS
+doesn't wait to be asked — it checks the proposed action against what actually
+happened last time, before the agent acts.
 
 **Everyone else builds a librarian. This is a guardrail.**
 
@@ -48,10 +72,24 @@ Microsoft Agent Framework workflow spine:
 | 7 | **Trust** | Compose a score from retrieval confidence, grounding, and decisiveness. |
 | 8 | **Human gate** | Pause. A person approves or overrides. Nothing proceeds to execution. |
 
-**The headline beat:** the intercepted action carries a dependency level. Drag it
-across the 70% concentration knee and re-run — the recommendation flips from
-*modify* to *approve*, because the simulated tail risk genuinely changes. It's a
-real causal response to the input, not a scripted animation.
+### The headline beat — why the recommendation flips
+
+The intercepted action carries one bounded lever: **single-vendor dependency
+concentration**. The cost model has a non-linear knee at ~70% — below it, a vendor
+disruption is absorbable; above it, the seeded Monte Carlo's loss distribution
+grows a fat tail that dominates the *approve* branch.
+
+So the flip is mechanical, not theatrical:
+
+| Lever | Simulated tail | Recommendation |
+|-------|----------------|----------------|
+| dependency **100%** | tail risk above threshold | **MODIFY** (cap below the knee) |
+| dependency **60%** | tail risk collapses | **APPROVE** |
+
+Same seed, same code path, one input moved across the knee. The model only
+proposes *which* levers exist; every number is computed by the Monte Carlo, and a
+DoWhy `do()` intervention isolates the causal effect of the lever. That's the
+difference between a guardrail that reasons and a demo that animates.
 
 ## Architecture
 
@@ -130,9 +168,12 @@ product spec: [`docs/PRD.md`](docs/PRD.md) · decisions:
   console resumes the same run over a second request. Double-clicks are idempotent.
 - **Measured, not asserted.** A committed red-team probe
   ([`data/eval/redteam.json`](data/eval/redteam.json)) fires direct and
-  indirect/XPIA injections at the shields and records the block rate; the
-  groundedness scorecard ([`data/eval/scorecard.json`](data/eval/scorecard.json))
-  covers 22 cases including the abstain ones.
+  indirect/XPIA injections at the shields: **84.6% block rate, zero false
+  positives** on clean inputs (a service error counts as *not blocked*, so that's
+  a lower bound). The groundedness scorecard
+  ([`data/eval/scorecard.json`](data/eval/scorecard.json)) scores **4.68 / 5
+  groundedness and 4.36 / 5 relevance** across 22 cases, including the abstain
+  ones.
 
 ## Data
 

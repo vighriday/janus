@@ -152,7 +152,7 @@ async function* readSse(res: Response): AsyncGenerator<StreamEvent> {
  */
 export async function* runPipeline(
   action: ProposedAction,
-  path = "/smoke",
+  path = "/invoke-workflow",
   signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent> {
   const res = await fetch(`${API_BASE}${path}`, {

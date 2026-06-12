@@ -10,9 +10,14 @@ import { cn } from "@/lib/cn";
 const CITE = /\[ref_id:(\d+)\]/g;
 
 // The model sometimes wraps emphasis in markdown (**bold**, *italic*); the panel
-// renders plain text, so strip the markers rather than show them literally.
+// renders plain text, so strip the markers rather than show them literally. The
+// final pass removes any orphan markers left when an emphasis span straddles a
+// citation marker, so a stray asterisk never reaches the screen.
 function stripEmphasis(s: string): string {
-  return s.replace(/\*\*(.+?)\*\*/g, "$1").replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "$1");
+  return s
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "$1")
+    .replace(/\*+/g, "");
 }
 
 export function LessonPanel({

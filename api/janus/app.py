@@ -1,9 +1,10 @@
 """FastAPI surface for JANUS.
 
-Two POST endpoints stream the pipeline as Server-Sent Events: `/invoke` runs the
-real six-step pipeline (guard → retrieve → trace → lesson → grounding → simulate
-→ trust → gate); `/smoke` walks a placeholder version, kept as a no-Azure wire
-check for the frontend.
+The pipeline streams over Server-Sent Events. `/invoke-workflow` runs the real
+pipeline on the Microsoft Agent Framework workflow spine and pauses at the human
+gate (resumed via `/resume/{run_id}`); `/invoke` runs the same real pipeline as
+plain async orchestration without the workflow pause. `/smoke` is a no-Azure wire
+check used only in development to exercise the SSE transport.
 """
 from __future__ import annotations
 

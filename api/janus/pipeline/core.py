@@ -1,10 +1,11 @@
 """The JANUS pipeline.
 
-Six steps from an intercepted action to a gated recommendation. Each step
+Eight steps from an intercepted action to a gated recommendation. Each step
 streams its own status (running -> done) so the console renders the reasoning as
 it happens. Retrieval is real Foundry IQ; grounding and injection screening are
-real Content Safety. Simulation and the composed trust score are wired in
-Phase 2 and are labeled as placeholders until then.
+real Content Safety. The simulation is a seeded Monte Carlo with a DoWhy do()
+intervention, and the trust score is composed from retrieval confidence,
+grounding, and decisiveness — every number is computed, none authored.
 
 Clients are created lazily on first run, not at import, so the app can boot (and
 serve /health) even if Azure is briefly unreachable.

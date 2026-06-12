@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  api:
+    name: api — lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: ruff
+        working-directory: api
+        run: uvx ruff check janus
+
+  web:
+    name: web — typecheck & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: install
+        working-directory: web
+        run: npm ci
+      - name: typecheck
+        working-directory: web
+        run: npx tsc --noEmit
+      - name: build
+        working-directory: web
+        run: npx next build
