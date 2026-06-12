@@ -126,14 +126,21 @@ class FoundryRetriever:
         if result.response and result.response[0].content:
             answer = (result.response[0].content[0].text or "").strip()
 
-        # Subqueries: pulled from each searchIndex activity record's generated search.
+        # Subqueries: the planner decomposes the question into several searches and
+        # records each one in the activity log. The argument record differs by
+        # knowledge-source type — `azureBlob` for the blob source we use,
+        # `searchIndex` for an index source — so read whichever is present. This is
+        # the visible "agentic" beat: one decision question -> several reranked
+        # searches.
         subqueries: list[str] = []
         for record in result.activity or []:
-            if getattr(record, "type", None) == "searchIndex":
-                args = getattr(record, "search_index_arguments", None)
-                q = getattr(args, "search", None) if args else None
-                if q:
-                    subqueries.append(q)
+            args = (
+                getattr(record, "azure_blob_arguments", None)
+                or getattr(record, "search_index_arguments", None)
+            )
+            q = getattr(args, "search", None) if args else None
+            if q and q not in subqueries:
+                subqueries.append(q)
 
         # References: each carries the reranker score and the source behind it.
         # Blob references expose source_data = {uid, blob_url, snippet}; the

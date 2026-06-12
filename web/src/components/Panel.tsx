@@ -40,12 +40,14 @@ export function Panel({
     >
       <header className="flex items-center gap-2 border-b px-4 py-2.5" style={{ borderColor: "var(--border)" }}>
         <span
+          role="img"
+          aria-label={`${state} step`}
           className={cn("h-2 w-2 shrink-0 rounded-full", state === "running" && "animate-pulse")}
           style={{ background: dot[state] }}
         />
-        <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-dim)" }}>
+        <h2 className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-dim)" }}>
           {title}
-        </span>
+        </h2>
         {badge != null && <span className="ml-auto text-xs">{badge}</span>}
       </header>
       <div className="flex min-h-0 flex-1 flex-col p-4">{children}</div>

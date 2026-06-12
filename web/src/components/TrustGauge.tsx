@@ -4,9 +4,10 @@ import type { TrustComponents } from "@/lib/stream";
 
 // The trust score and the three signals that compose it. The arc is the headline
 // number; the bars below show what it's made of and how each is weighted, so the
-// score is legible rather than a black box.
+// score is legible rather than a black box. The weights come from the run payload
+// so the displayed multipliers always match the policy the backend applied.
 
-const WEIGHTS: Record<keyof TrustComponents, number> = {
+const DEFAULT_WEIGHTS: Record<keyof TrustComponents, number> = {
   retrieval: 0.3,
   grounding: 0.4,
   decisiveness: 0.3,
@@ -27,7 +28,16 @@ function Arc({ value }: { value: number }) {
   const c = Math.PI * r; // semicircle length
   const filled = Math.max(0, Math.min(1, value)) * c;
   return (
-    <svg viewBox="0 0 140 78" className="w-full" style={{ maxWidth: 180 }}>
+    <svg
+      viewBox="0 0 140 78"
+      className="w-full"
+      style={{ maxWidth: 180 }}
+      role="meter"
+      aria-label="Trust score"
+      aria-valuenow={Math.round(value * 100)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
       <path d="M 18 70 A 52 52 0 0 1 122 70" fill="none" stroke="var(--surface-2)" strokeWidth={10} strokeLinecap="round" />
       <path
         d="M 18 70 A 52 52 0 0 1 122 70"
@@ -51,14 +61,19 @@ function Arc({ value }: { value: number }) {
 export function TrustGauge({
   trust,
   components,
+  weights,
+  floor,
   state,
   capped,
 }: {
   trust: number;
   components: TrustComponents;
+  weights?: TrustComponents;
+  floor?: number;
   state?: string;
   capped?: boolean;
 }) {
+  const w = weights ?? DEFAULT_WEIGHTS;
   const keys = Object.keys(components) as (keyof TrustComponents)[];
   return (
     <div className="flex flex-col gap-3">
@@ -72,7 +87,15 @@ export function TrustGauge({
               <span className="w-20 shrink-0" style={{ color: "var(--text-dim)" }}>
                 {LABELS[k]}
               </span>
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full" style={{ background: "var(--surface-2)" }}>
+              <div
+                className="h-1.5 flex-1 overflow-hidden rounded-full"
+                style={{ background: "var(--surface-2)" }}
+                role="meter"
+                aria-label={`${LABELS[k]} signal`}
+                aria-valuenow={Math.round(v * 100)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
                 <div
                   className="h-full rounded-full"
                   style={{ width: `${Math.round(v * 100)}%`, background: color(v), transition: "width 500ms ease" }}
@@ -82,7 +105,7 @@ export function TrustGauge({
                 {v.toFixed(2)}
               </span>
               <span className="w-8 shrink-0 text-right tabular-nums" style={{ color: "var(--text-dim)" }}>
-                ×{WEIGHTS[k]}
+                ×{w[k]}
               </span>
             </div>
           );
@@ -94,8 +117,8 @@ export function TrustGauge({
           {capped
             ? "Score capped: some lesson claims read as ungrounded — provisional, not full confidence."
             : state === "weak_evidence"
-              ? "Weak evidence — below the trust floor. Escalate to a human."
-              : "Above the trust floor."}
+              ? `Weak evidence — below the ${floor != null ? Math.round(floor * 100) : 60} trust floor. Escalate to a human.`
+              : `Above the ${floor != null ? Math.round(floor * 100) : 60} trust floor.`}
         </div>
       )}
     </div>

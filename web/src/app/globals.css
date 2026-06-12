@@ -8,6 +8,10 @@
   --text: #e8e8ea;
   --text-dim: #9a9aa2;
   --accent: #6366f1;
+  /* Lighter accent for accent-coloured *text* on dark surfaces, where the base
+     accent falls below the 4.5:1 AA threshold. Buttons keep the base accent with
+     dark ink. */
+  --accent-text: #a5b4fc;
   --ok: #22c55e;
   --warn: #f59e0b;
   --danger: #ef4444;
@@ -23,4 +27,24 @@ body {
 
 * {
   box-sizing: border-box;
+}
+
+/* Visible keyboard focus everywhere (Tailwind's reset removes author outlines). */
+:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Respect a reduced-motion preference: drop the pulses, arc fills, and edge
+   animations for users who ask for less movement. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

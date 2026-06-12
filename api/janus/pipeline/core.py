@@ -193,6 +193,7 @@ async def run_janus_pipeline(action: ProposedAction) -> AsyncIterator[str]:
             futures=sim.futures, recommended=sim.recommended,
             causal_effect=sim.causal_effect, seed_manifest=sim.seed_manifest,
             dependency_anchor=sim.dependency_anchor,
+            concentration_knee=get_settings().concentration_knee,
         )
     else:
         yield _ev(5, StepKind.simulate, StepStatus.failed, "Simulation unavailable")

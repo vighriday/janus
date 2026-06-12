@@ -48,9 +48,26 @@ export function FuturesChart({
 
   const ticks = [lo, lo + span / 2, hi];
 
+  const summary =
+    "Outcome ranges per future. " +
+    rows
+      .map(
+        (r) =>
+          `${r.label}: median ${money(r.p50)}, range ${money(r.p10)} to ${money(r.p90)}, ${r.risk_label} risk${r.label === recommended ? ", recommended" : ""}`,
+      )
+      .join(". ") +
+    ".";
+
   return (
     <div className="flex h-full flex-col">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="xMidYMid meet" style={{ maxHeight: 200 }}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full"
+        preserveAspectRatio="xMidYMid meet"
+        style={{ maxHeight: 200 }}
+        role="img"
+        aria-label={summary}
+      >
         {/* x grid + labels */}
         {ticks.map((t, i) => (
           <g key={i}>
@@ -100,10 +117,11 @@ export function FuturesChart({
           const rec = r.label === recommended;
           return (
             <span key={r.label} className={cn("flex items-center gap-1.5", rec && "font-semibold")} style={{ color: rec ? "var(--text)" : undefined }}>
-              <span className="h-2 w-2 rounded-full" style={{ background: RISK_COLOR[r.risk_label] }} />
+              <span className="h-2 w-2 rounded-full" style={{ background: RISK_COLOR[r.risk_label] }} aria-hidden="true" />
               <span className="capitalize">{r.label}</span>
+              <span style={{ color: RISK_COLOR[r.risk_label] }}>{r.risk_label}</span>
               <span className="tabular-nums" title="median (P50)">{money(r.p50)}</span>
-              {rec && <span style={{ color: "var(--accent)" }}>◂ recommended</span>}
+              {rec && <span style={{ color: "var(--accent-text)" }}>◂ recommended</span>}
             </span>
           );
         })}

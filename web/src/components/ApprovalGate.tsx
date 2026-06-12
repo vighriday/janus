@@ -1,40 +1,44 @@
 "use client";
 
 import { useState } from "react";
+import type { FutureBand } from "@/lib/stream";
 import { cn } from "@/lib/cn";
 
 // The human-in-the-loop gate. JANUS never executes — it recommends, and a person
-// decides. The recommended verdict is surfaced with its reasoning; the operator
-// approves or overrides. The decision is recorded locally for the demo.
+// decides. The verdict and its justification come from the run itself: the
+// grounded lesson and the recommended future's modelled outcome, not canned
+// prose. The operator approves or overrides.
 
 type Decision = "approved" | "overridden" | null;
 
-const VERDICT_COPY: Record<string, { title: string; tone: string; why: string }> = {
-  approve: {
-    title: "Approve",
-    tone: "var(--ok)",
-    why: "Below the 70% concentration knee the savings dominate and the resilience tail stays survivable.",
-  },
-  modify: {
-    title: "Modify",
-    tone: "var(--warn)",
-    why: "Full consolidation crosses the concentration knee; cap the top vendor and keep a warm fallback.",
-  },
-  reject: {
-    title: "Reject",
-    tone: "var(--danger)",
-    why: "Every modelled future carries a catastrophic downside — hold the status quo.",
-  },
-  review: {
-    title: "Escalate",
-    tone: "var(--text-dim)",
-    why: "Evidence is too thin to recommend — a human should decide.",
-  },
+const VERDICT_META: Record<string, { title: string; tone: string }> = {
+  approve: { title: "Approve", tone: "var(--ok)" },
+  modify: { title: "Modify", tone: "var(--warn)" },
+  reject: { title: "Reject", tone: "var(--danger)" },
+  review: { title: "Escalate", tone: "var(--text-dim)" },
 };
 
-export function ApprovalGate({ recommended }: { recommended: string }) {
+function money(v: number): string {
+  const a = Math.abs(v);
+  const s = a >= 1e6 ? `${(a / 1e6).toFixed(2)}M` : a >= 1e3 ? `${Math.round(a / 1e3)}k` : `${Math.round(a)}`;
+  return v < 0 ? `-$${s}` : `$${s}`;
+}
+
+export function ApprovalGate({
+  recommended,
+  lesson,
+  futures,
+}: {
+  recommended: string;
+  lesson?: string;
+  futures?: FutureBand[];
+}) {
   const [decision, setDecision] = useState<Decision>(null);
-  const copy = VERDICT_COPY[recommended] ?? VERDICT_COPY.review;
+  const meta = VERDICT_META[recommended] ?? VERDICT_META.review;
+  const rec = futures?.find((f) => f.label === recommended);
+  // The justification is the grounded lesson (first sentence) plus the recommended
+  // future's own modelled median — both produced by the run, not authored here.
+  const lessonLead = lesson?.split(/(?<=\.)\s/)[0] ?? "";
 
   return (
     <div className="flex flex-col gap-3">
@@ -44,21 +48,34 @@ export function ApprovalGate({ recommended }: { recommended: string }) {
         </span>
         <span
           className="rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wide"
-          style={{ background: copy.tone, color: recommended === "modify" ? "#1a1a1a" : "white" }}
+          style={{ background: meta.tone, color: "#0a0a0b" }}
         >
-          {copy.title}
+          {meta.title}
         </span>
       </div>
-      <p className="text-xs leading-relaxed" style={{ color: "var(--text-dim)" }}>
-        {copy.why}
-      </p>
+
+      {lessonLead && (
+        <p className="text-xs leading-relaxed" style={{ color: "var(--text-dim)" }}>
+          {lessonLead}
+        </p>
+      )}
+      {rec && (
+        <p className="text-xs" style={{ color: "var(--text-dim)" }}>
+          The recommended <span style={{ color: "var(--text)" }}>{recommended}</span> future
+          models a median of{" "}
+          <span className="tabular-nums font-medium" style={{ color: "var(--text)" }}>
+            {money(rec.p50)}
+          </span>{" "}
+          at <span className="tabular-nums">{rec.risk_label}</span> risk.
+        </p>
+      )}
 
       {decision == null ? (
         <div className="flex gap-2">
           <button
             onClick={() => setDecision("approved")}
-            className="flex-1 rounded-md px-3 py-2 text-xs font-medium text-white transition"
-            style={{ background: "var(--ok)" }}
+            className="flex-1 rounded-md px-3 py-2 text-xs font-semibold transition"
+            style={{ background: "var(--ok)", color: "#0a0a0b" }}
           >
             Approve recommendation
           </button>
@@ -80,7 +97,7 @@ export function ApprovalGate({ recommended }: { recommended: string }) {
           }}
         >
           {decision === "approved"
-            ? `Human approved the “${copy.title.toLowerCase()}” recommendation. Action released for execution.`
+            ? `Human approved the “${meta.title.toLowerCase()}” recommendation. Action released for execution.`
             : "Human overrode the recommendation. Logged for review — nothing executed."}
           <button onClick={() => setDecision(null)} className="ml-2 underline" style={{ color: "var(--text-dim)" }}>
             reset

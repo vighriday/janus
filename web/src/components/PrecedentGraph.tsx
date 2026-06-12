@@ -145,8 +145,13 @@ export function PrecedentGraph({
     [precedents, traces, activeRef],
   );
 
+  const summary =
+    `Decision graph: the intercepted action links to ${precedents.length} retrieved ` +
+    `precedent${precedents.length === 1 ? "" : "s"} (${precedents.map((p) => p.title).join("; ")}), ` +
+    `each traced to the outcomes that followed.`;
+
   return (
-    <div className="h-full w-full" style={{ minHeight: 220 }}>
+    <div className="h-full w-full" style={{ minHeight: 220 }} role="img" aria-label={summary}>
       <ReactFlowProvider>
         <ReactFlow
           nodes={nodes}

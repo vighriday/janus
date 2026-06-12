@@ -89,10 +89,13 @@ export interface StepPayload {
   causal_effect?: CausalEffect;
   seed_manifest?: string;
   dependency_anchor?: number | null;
+  concentration_knee?: number;
   // trust
   trust?: number;
   state?: string;
+  floor?: number;
   components?: TrustComponents;
+  weights?: TrustComponents;
 }
 
 export interface ProposedAction {

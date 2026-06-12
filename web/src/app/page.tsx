@@ -9,8 +9,19 @@ import { PrecedentGraph } from "@/components/PrecedentGraph";
 import { FuturesChart } from "@/components/FuturesChart";
 import { TrustGauge } from "@/components/TrustGauge";
 import { ApprovalGate } from "@/components/ApprovalGate";
+import { QueryPlan } from "@/components/QueryPlan";
+import { CausalContrast } from "@/components/CausalContrast";
 
-const CONTRACT_VALUE = 3_360_000;
+// The intercepted scenario. A single demo case lives here; everything downstream
+// is driven by the stream, and the dependency lever is the operator's to move.
+const SCENARIO = {
+  action: "consolidate_vendors",
+  summary: "Should we consolidate the carrier-routing vendors onto one vendor?",
+  targetVendor: "Tessell",
+  contractValue: 3_360_000,
+  description:
+    "Auto-approve the carrier-routing renewal and consolidate vendors onto the top vendor.",
+};
 
 type PanelState = "idle" | "running" | "done" | "failed";
 
@@ -29,6 +40,7 @@ export default function Home() {
   const [log, setLog] = useState<{ id: string; label: string; status: StepStatus }[]>([]);
   const [running, setRunning] = useState(false);
   const [activeRef, setActiveRef] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const run = useCallback(async () => {
@@ -38,11 +50,16 @@ export default function Home() {
     setByKind(new Map());
     setLog([]);
     setActiveRef(null);
+    setError(null);
     setRunning(true);
     const action = {
-      action: "consolidate_vendors",
-      summary: "Should we consolidate the carrier-routing vendors onto one vendor?",
-      params: { target_vendor: "Tessell", dependency_after: dependency, contract_value: CONTRACT_VALUE },
+      action: SCENARIO.action,
+      summary: SCENARIO.summary,
+      params: {
+        target_vendor: SCENARIO.targetVendor,
+        dependency_after: dependency,
+        contract_value: SCENARIO.contractValue,
+      },
     };
     try {
       for await (const ev of runPipeline(action, "/invoke", ac.signal)) {
@@ -57,7 +74,12 @@ export default function Home() {
         });
       }
     } catch (err) {
-      if (!ac.signal.aborted) console.error(err);
+      if (!ac.signal.aborted) {
+        console.error(err);
+        setError(
+          "The pipeline could not complete — the backend may be unreachable or an Azure call failed. Check that the API is running, then run again.",
+        );
+      }
     } finally {
       setRunning(false);
     }
@@ -72,19 +94,22 @@ export default function Home() {
   const approval = byKind.get("approval");
 
   const precedents = retrieve?.payload.precedents ?? [];
+  const subqueries = retrieve?.payload.subqueries ?? [];
   const traces = trace?.payload.traces ?? {};
   const lessonText = lesson?.payload.lesson ?? "";
   const futures = simulate?.payload.futures ?? [];
+  const causal = simulate?.payload.causal_effect;
   const recommended = simulate?.payload.recommended ?? approval?.payload.recommended ?? "";
   const trustVal = trust?.payload.trust;
   const components = trust?.payload.components;
+  const weights = trust?.payload.weights;
 
   const groundedBadge = useMemo(() => {
     const pct = grounding?.payload.grounded_pct;
     if (pct == null) return null;
     return (
       <span style={{ color: grounding?.payload.ungrounded ? "var(--warn)" : "var(--ok)" }}>
-        {pct}% grounded
+        {pct}% grounded{grounding?.payload.ungrounded ? " · flagged" : ""}
       </span>
     );
   }, [grounding]);
@@ -113,8 +138,20 @@ export default function Home() {
         onDependency={setDependency}
         running={running}
         onRun={run}
-        contractValue={CONTRACT_VALUE}
+        contractValue={SCENARIO.contractValue}
+        description={SCENARIO.description}
+        knee={simulate?.payload.concentration_knee ?? 0.7}
       />
+
+      {error && (
+        <div
+          role="alert"
+          className="mt-4 rounded-lg border px-4 py-3 text-sm"
+          style={{ borderColor: "var(--danger)", background: "var(--surface)", color: "var(--text)" }}
+        >
+          {error}
+        </div>
+      )}
 
       <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Lesson — spans two columns, the grounded reasoning */}
@@ -142,11 +179,22 @@ export default function Home() {
             <TrustGauge
               trust={trustVal}
               components={components}
+              weights={weights}
+              floor={trust?.payload.floor}
               state={trust?.payload.state}
               capped={grounding?.payload.ungrounded}
             />
           ) : (
             <Empty label="Composed from retrieval, grounding, and decisiveness." />
+          )}
+        </Panel>
+
+        {/* Query plan — the agentic retrieval beat */}
+        <Panel title="Query plan — Foundry IQ" state={panelState(retrieve)}>
+          {subqueries.length ? (
+            <QueryPlan subqueries={subqueries} />
+          ) : (
+            <Empty label="The subqueries Foundry IQ planned to answer the decision question." />
           )}
         </Panel>
 
@@ -162,29 +210,38 @@ export default function Home() {
         {/* Approval gate */}
         <Panel title="Human approval" state={panelState(approval)}>
           {recommended ? (
-            <ApprovalGate recommended={recommended} />
+            <ApprovalGate recommended={recommended} lesson={lessonText} futures={futures} />
           ) : (
             <Empty label="JANUS recommends; a human approves or overrides." />
           )}
         </Panel>
 
-        {/* Futures — spans all three */}
+        {/* Futures — spans two columns */}
         <Panel
           title="Three futures — simulated, not authored"
           state={panelState(simulate)}
           badge={
             simulate?.payload.seed_manifest ? (
-              <span className="tabular-nums" style={{ color: "var(--text-dim)" }} title="run seed manifest">
+              <span className="tabular-nums" style={{ color: "var(--text-dim)" }} title="run seed manifest (SHA-256)">
                 seed {simulate.payload.seed_manifest.slice(0, 8)}
               </span>
             ) : null
           }
-          className="lg:col-span-3 min-h-[220px]"
+          className="lg:col-span-2 min-h-[220px]"
         >
           {futures.length ? (
             <FuturesChart futures={futures} recommended={recommended} />
           ) : (
             <Empty label="A seeded Monte Carlo over a transparent cost model — P10/P50/P90 per future. The guardrail refuses the catastrophic tail." />
+          )}
+        </Panel>
+
+        {/* Causal contrast — the DoWhy do() result */}
+        <Panel title="Causal contrast — do()" state={panelState(simulate)}>
+          {causal ? (
+            <CausalContrast causal={causal} />
+          ) : (
+            <Empty label="A do()-intervention: what moving the dependency lever does to expected resilience loss, all else fixed." />
           )}
         </Panel>
       </div>
@@ -196,24 +253,26 @@ export default function Home() {
         </div>
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
           {log.length === 0 && <span style={{ color: "var(--text-dim)" }}>Idle — run JANUS to intercept the action.</span>}
-          {log.map((e) => (
-            <span key={e.id} className="flex items-center gap-1.5">
-              <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{
-                  background:
-                    e.status === "done"
-                      ? "var(--ok)"
-                      : e.status === "failed"
-                        ? "var(--danger)"
-                        : e.status === "running"
-                          ? "var(--accent)"
-                          : "var(--text-dim)",
-                }}
-              />
-              <span style={{ color: e.status === "running" ? "var(--text)" : "var(--text-dim)" }}>{e.label}</span>
-            </span>
-          ))}
+          {log.map((e) => {
+            const glyph =
+              e.status === "done" ? "✓" : e.status === "failed" ? "✕" : e.status === "running" ? "▸" : "·";
+            const tone =
+              e.status === "done"
+                ? "var(--ok)"
+                : e.status === "failed"
+                  ? "var(--danger)"
+                  : e.status === "running"
+                    ? "var(--accent-text)"
+                    : "var(--text-dim)";
+            return (
+              <span key={e.id} className="flex items-center gap-1.5">
+                <span className="tabular-nums" style={{ color: tone }} aria-hidden="true">
+                  {glyph}
+                </span>
+                <span style={{ color: e.status === "running" ? "var(--text)" : "var(--text-dim)" }}>{e.label}</span>
+              </span>
+            );
+          })}
         </div>
       </div>
     </main>
