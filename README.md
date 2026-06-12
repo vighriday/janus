@@ -3,13 +3,14 @@
 **A decision guardrail for autonomous enterprise agents. Everyone else builds a
 librarian — this is the guardrail in front of the action.**
 
-Before an AI agent executes a proposed action, JANUS *intercepts* it, retrieves
-analogous past org decisions and their outcomes through **Foundry IQ**, simulates
-three futures, and returns a cited, grounded recommendation — approve, modify, or
-reject — for a human to sign off. Knowledge tools answer questions *when asked*;
-by then the agent has already decided. JANUS doesn't wait. It is decision support
-with a human in the loop, and **by construction it never executes anything on its
-own.**
+Before an AI agent executes a proposed action, JANUS *intercepts* it and hands it
+to a **team of six reasoning agents** on a Microsoft Agent Framework workflow.
+They retrieve analogous past org decisions and their outcomes through **Foundry
+IQ**, trace what happened, ground a cited lesson, simulate three futures, and
+return a recommendation — approve, modify, or reject — for a human to sign off.
+Knowledge tools answer questions *when asked*; by then the agent has already
+decided. JANUS doesn't wait. It is decision support with a human in the loop, and
+**by construction it never executes anything on its own.**
 
 ![track](https://img.shields.io/badge/Agents_League-Reasoning_Agents-6366f1)
 ![iq](https://img.shields.io/badge/Microsoft_IQ-Foundry_IQ-22c55e)
@@ -25,6 +26,10 @@ own.**
 
 ## At a glance
 
+- **A multi-agent reasoning team** — six single-responsibility agents (Guard,
+  Retriever, Tracer, Lesson, Simulator, Decision) collaborate over typed edges on
+  a Microsoft Agent Framework workflow, following a Planner→Executor +
+  Critic/Verifier pattern. Any agent can abstain and halt the team.
 - **Real Foundry IQ agentic retrieval** — query planning, reranker scores, and a
   `[ref_id]` citation on every claim. Below the reranker floor, it abstains rather
   than guess.
@@ -56,21 +61,24 @@ happened last time, before the agent acts.
 
 **Everyone else builds a librarian. This is a guardrail.**
 
-## What it does
+## What it does — a team of reasoning agents
 
-When an agent proposes an action, JANUS runs an eight-step pipeline on a
-Microsoft Agent Framework workflow spine:
+JANUS is a **multi-agent reasoning system**: six single-responsibility agents
+collaborate over typed message edges on a Microsoft Agent Framework workflow,
+each owning one reasoning step and handing its typed output to the next. The
+roster follows the reasoning patterns the track rewards — a Planner→Executor
+decomposition with built-in Critic/Verifier checks — and several agents can
+*refuse and halt the team* (abstain, block) rather than push a weak answer
+through.
 
-| # | Step | What happens |
-|---|------|--------------|
-| 1 | **Guard** | Content Safety Prompt Shields screen the action *and* the documents about to be read (direct + indirect/XPIA injection). |
-| 2 | **Retrieve** | Foundry IQ agentic retrieval plans subqueries, ranks precedents with reranker scores, and returns `[ref_id]` citations. Below the floor → abstain. |
-| 3 | **Trace** | For each cited precedent, walk its decision → outcome links in the in-process decision graph. |
-| 4 | **Lesson** | Extract one grounded principle, every claim cited. No supporting evidence → abstain. |
-| 5 | **Grounding gate** | Content Safety Groundedness Detection blocks a lesson its sources don't support. |
-| 6 | **Simulate** | Three futures (approve / modify / reject). The model proposes only bounded levers; a seeded Monte Carlo computes every number, and a DoWhy `do()` intervention quantifies the causal effect. |
-| 7 | **Trust** | Compose a score from retrieval confidence, grounding, and decisiveness. |
-| 8 | **Human gate** | Pause. A person approves or overrides. Nothing proceeds to execution. |
+| Agent | Pattern | What it reasons about |
+|-------|---------|-----------------------|
+| **GuardAgent** | Verifier | Content Safety Prompt Shields screen the action *and* the documents about to be read (direct + indirect/XPIA injection). |
+| **RetrieverAgent** | Executor | **Foundry IQ** agentic retrieval plans subqueries, ranks precedents with reranker scores, returns `[ref_id]` citations. Below the floor → abstain. |
+| **TracerAgent** | Executor | For each cited precedent, walks its decision → outcome links in the in-process decision graph. |
+| **LessonAgent** | Executor + Critic | Synthesises one grounded principle, every claim cited — then *self-verifies* it with Content Safety Groundedness. No support → abstain. |
+| **SimulatorAgent** | Executor | Three futures (approve / modify / reject). It proposes only bounded levers; a seeded Monte Carlo computes every number, and a DoWhy `do()` intervention quantifies the causal effect. |
+| **DecisionAgent** | Planner / HITL | Composes a trust score from the upstream agents' signals, then **pauses the whole team** for a human to approve or override. Nothing proceeds to execution. |
 
 ### The headline beat — why the recommendation flips
 
@@ -97,17 +105,15 @@ difference between a guardrail that reasons and a demo that animates.
 flowchart TD
     A([Proposed action<br/>from an autonomous agent]) --> G
 
-    subgraph spine["Microsoft Agent Framework workflow (deterministic spine)"]
+    subgraph spine["Six reasoning agents · Microsoft Agent Framework workflow"]
         direction TB
-        G["1 · GUARD"]
-        R["2 · RETRIEVE<br/>query plan · ranked precedents · citations"]
-        T["3 · TRACE"]
-        L["4 · LESSON"]
-        GR["5 · GROUNDING GATE"]
-        SIM["6 · SIMULATE<br/>3 futures · seeded Monte Carlo · DoWhy do()"]
-        TR["7 · TRUST SCORE"]
-        H{{"8 · HUMAN GATE<br/>approve / override · never auto-executes"}}
-        G --> R --> T --> L --> GR --> SIM --> TR --> H
+        G["GuardAgent<br/>verifier"]
+        R["RetrieverAgent<br/>query plan · ranked precedents · citations"]
+        T["TracerAgent<br/>decision → outcome graph"]
+        L["LessonAgent<br/>cited principle · self-verifies grounding"]
+        SIM["SimulatorAgent<br/>3 futures · seeded Monte Carlo · DoWhy do()"]
+        H{{"DecisionAgent<br/>trust score · human gate · never auto-executes"}}
+        G --> R --> T --> L --> SIM --> H
     end
 
     CS["Azure AI Content Safety<br/>Prompt Shields · Groundedness"]
@@ -117,7 +123,7 @@ flowchart TD
     CS -. screens .-> G
     IQ == "the IQ integration" ==> R
     AOAI -. extracts .-> L
-    CS -. gates .-> GR
+    CS -. grounds .-> L
 
     R -- "no precedent" --> AB([ABSTAIN<br/>escalate to a human])
     L -- "insufficient evidence" --> AB
@@ -135,7 +141,7 @@ flowchart TD
 
 | Layer | Choice |
 |-------|--------|
-| **Orchestration** | Microsoft Agent Framework — Workflows graph API, typed executors, a real `request_info` human-in-the-loop pause |
+| **Orchestration** | Microsoft Agent Framework — six reasoning agents as typed executors over a Workflows graph, collaborating along typed message edges, with a real `request_info` human-in-the-loop pause |
 | **Retrieval (the IQ layer)** | Foundry IQ / Azure AI Search agentic retrieval — query planning, reranker scores, `[ref_id]` citations |
 | **Decision graph** | In-process NetworkX (at this scale a graph server is pure friction) |
 | **Simulation** | Seeded NumPy Monte Carlo over a transparent cost model + a DoWhy `do()` causal contrast |

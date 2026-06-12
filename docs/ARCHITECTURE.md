@@ -8,9 +8,10 @@ to respect. It is the reference the build follows.
 
 ## 1. Shape of the system
 
-JANUS is a deterministic six-step pipeline that sits between an autonomous agent
-and the action it wants to take. A Python service runs the pipeline; a Next.js
-console renders it as it happens. Foundry IQ is the one real Microsoft
+JANUS is a multi-agent reasoning system — six single-responsibility agents
+collaborating along a deterministic workflow — that sits between an autonomous
+agent and the action it wants to take. A Python service runs the agent team; a
+Next.js console renders it as it happens. Foundry IQ is the one real Microsoft
 intelligence layer. Everything else is chosen to keep that integration central
 and the reasoning visible.
 
@@ -18,17 +19,15 @@ and the reasoning visible.
 flowchart TD
     A([Proposed action<br/>from an autonomous agent]) --> G
 
-    subgraph spine["Microsoft Agent Framework workflow (deterministic spine)"]
+    subgraph spine["Six reasoning agents · Microsoft Agent Framework workflow"]
         direction TB
-        G["1 · GUARD<br/>screen action + retrieved docs"]
-        R["2 · RETRIEVE<br/>query plan, ranked precedents,<br/>reranker scores, ref_id citations"]
-        T["3 · TRACE<br/>walk each precedent's outcomes"]
-        L["4 · LESSON<br/>one grounded, cited principle"]
-        GR["5 · GROUNDING GATE<br/>is the lesson supported?"]
-        SIM["6 · SIMULATE<br/>3 futures, seeded Monte Carlo<br/>+ DoWhy do() contrast"]
-        TR["7 · TRUST SCORE<br/>retrieval + grounding + decisiveness"]
-        H{{"8 · HUMAN GATE<br/>approve / override<br/>never auto-executes"}}
-        G --> R --> T --> L --> GR --> SIM --> TR --> H
+        G["GuardAgent · verifier<br/>screen action + retrieved docs"]
+        R["RetrieverAgent · executor<br/>query plan, ranked precedents,<br/>reranker scores, ref_id citations"]
+        T["TracerAgent · executor<br/>walk each precedent's outcomes"]
+        L["LessonAgent · executor + critic<br/>one cited principle, self-verified<br/>against its sources (groundedness)"]
+        SIM["SimulatorAgent · executor<br/>3 futures, seeded Monte Carlo<br/>+ DoWhy do() contrast"]
+        H{{"DecisionAgent · planner / HITL<br/>trust score · approve / override<br/>never auto-executes"}}
+        G --> R --> T --> L --> SIM --> H
     end
 
     CS["Azure AI Content Safety<br/>Prompt Shields · Groundedness"]
@@ -40,7 +39,7 @@ flowchart TD
     IQ == "the IQ integration" ==> R
     GRAPH -. traverses .-> T
     AOAI -. extracts .-> L
-    CS -. gates .-> GR
+    CS -. grounds .-> L
     AOAI -. proposes levers .-> SIM
 
     R -- "no precedent<br/>below reranker floor" --> AB([ABSTAIN<br/>escalate to a human])
@@ -82,13 +81,21 @@ probabilistic simulation, groundedness reasoning-mode, a red-team ASR artifact.
 
 ## 3. Why these, specifically
 
-**Orchestration — Microsoft Agent Framework.** JANUS is a fixed six-step
-pipeline, not an open-ended autonomous agent. That is exactly the case
-Microsoft's own docs say to model as a *workflow*, not an agent: well-defined
-steps, explicit control over execution order. The graph API gives typed message
-routing, conditional edges (the abstain branch), fan-out/fan-in (the three-future
-simulation), and a human-in-the-loop request primitive that maps one-to-one onto
-"never auto-executes." It is the first-party SDK for Azure AI Foundry Agent
+**Orchestration — Microsoft Agent Framework.** JANUS is a **multi-agent reasoning
+system**: six single-responsibility agents (Guard, Retriever, Tracer, Lesson,
+Simulator, Decision) that collaborate over typed message edges, each owning one
+reasoning step and handing its typed output to the next. The roster follows the
+reasoning patterns the track rewards — a Planner→Executor decomposition with
+Critic/Verifier agents guarding the output (GuardAgent verifies the input;
+LessonAgent self-verifies its principle against its sources). What it is *not* is
+a single open-ended autonomous agent improvising tool calls in a loop — the
+*orchestration* between the agents is deterministic by design, which is exactly
+the case Microsoft's docs say to model as a *workflow*: well-defined hand-offs and
+explicit control over execution order. That determinism is the source of the
+reproducible causal flip; the reasoning *inside* each agent is real. The graph API
+gives typed message routing, conditional edges (the abstain branch), fan-out/fan-in
+(the three-future simulation), and a human-in-the-loop request primitive that maps
+one-to-one onto "never auto-executes." It is the first-party SDK for Azure AI Foundry Agent
 Service, it emits OpenTelemetry traces into Foundry Observability with no extra
 wiring, and it is the GA successor that absorbed AutoGen and Semantic Kernel
 (both now maintenance-only — reaching for them would signal we missed the

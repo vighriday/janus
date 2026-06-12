@@ -68,8 +68,8 @@ Everything in the product serves that one verb.
 
 ## 7. The workflow (functional spec)
 
-The product is a six-step pipeline triggered by a proposed action. Each step has
-a hard requirement.
+The product is a team of six reasoning agents triggered by a proposed action.
+Each agent has a hard requirement.
 
 1. **Guard.** Screen the proposed action and the retrieved documents for direct
    and indirect prompt injection. Retrieved org-history documents are untrusted
@@ -115,7 +115,7 @@ a hard requirement.
 | Rubric axis | Weight | How JANUS earns it |
 |-------------|--------|--------------------|
 | Accuracy & Relevance | 20% | Real Foundry IQ integration, grounded answers, meets the track |
-| Reasoning & Multi-step | 20% | Visible six-step pipeline: query decomposition, graph traversal, a seeded simulation, and a DoWhy `do()` causal contrast |
+| Reasoning & Multi-step | 20% | Six collaborating reasoning agents (Planner→Executor + Critic/Verifier): query decomposition, graph traversal, a seeded simulation, and a DoWhy `do()` causal contrast |
 | Reliability & Safety | 20% | Grounding gate, abstention, direct + indirect injection screening, a real HITL pause-and-resume, a committed 22-case eval scorecard, and a red-team ASR probe |
 | Creativity & Originality | 15% | Interception (not retrieval); the live input-change beat |
 | UX & Presentation | 15% | One clean console; reasoning shown as it happens |

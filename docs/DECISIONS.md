@@ -85,8 +85,10 @@ That verb is the differentiator; everything else serves it.
 
 ### Microsoft Agent Framework for orchestration
 
-JANUS is a fixed six-step pipeline, which is the textbook "use a workflow, not an
-agent" case. The Agent Framework Workflows graph API gives deterministic edges,
+JANUS is a multi-agent reasoning system — six single-responsibility agents
+collaborating over typed edges — orchestrated deterministically rather than as one
+open-ended autonomous agent, which is the textbook "use a workflow to coordinate
+agents" case. The Agent Framework Workflows graph API gives deterministic edges,
 fan-out/fan-in for the simulation, and a human-in-the-loop primitive, and it's the
 first-party Foundry SDK with free OpenTelemetry tracing. LangGraph was the runner-
 up — a hair more battle-tested, but third-party, and it would demote Foundry to a

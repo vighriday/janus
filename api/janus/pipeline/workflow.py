@@ -1,11 +1,24 @@
-"""The JANUS pipeline as a Microsoft Agent Framework workflow.
+"""The JANUS multi-agent reasoning system on a Microsoft Agent Framework workflow.
 
-This is the deterministic spine the architecture calls for: explicit executors
-and typed edges, a fan-out/fan-in for the three-future simulation, and a
-human-in-the-loop pause before any recommendation is finalized. The executor
-bodies reuse the same real clients the streaming pipeline uses (Foundry IQ
-retrieval, Content Safety, the simulation engine) — the orchestration is what
-changes, not the logic.
+JANUS is a team of six single-responsibility reasoning agents that collaborate
+over typed message edges to turn one intercepted action into a gated
+recommendation. Each agent owns one reasoning step and hands its typed output to
+the next; several can refuse and halt the chain (abstain, block). The roster maps
+onto the reasoning patterns the track values — a Planner→Executor decomposition
+with two Critic/Verifier agents guarding the output:
+
+    GuardAgent      screens the action for injection              (Verifier)
+    RetrieverAgent  agentic retrieval over the decision history   (Executor)  ← Foundry IQ
+    TracerAgent     walks each precedent's outcomes in the graph  (Executor)
+    LessonAgent     synthesises one grounded, cited principle and
+                    self-verifies it against its sources (Content
+                    Safety groundedness)                          (Executor + Critic)
+    SimulatorAgent  models three futures, computes the causal do() (Executor)
+    DecisionAgent   composes trust, then pauses for a human        (Planner / HITL)
+
+The agent bodies use the same real clients the streaming pipeline uses (Foundry
+IQ retrieval, Content Safety, the simulation engine) — the orchestration is the
+deterministic part; the reasoning inside each agent is real.
 
 Events from `run(stream=True)` are translated to the same StreamEvent SSE frames
 the console already understands, so the frontend is unchanged. The HITL request
@@ -106,7 +119,9 @@ def build_workflow(progress, clients):
     """Construct the JANUS workflow graph. `clients` bundles the shared clients."""
     safety, retriever, llm, graph = clients
 
-    class Guard(Executor):
+    class GuardAgent(Executor):
+        """Verifier — screens the action for prompt injection before any work."""
+
         def __init__(self) -> None:
             super().__init__(id="guard")
 
@@ -121,7 +136,9 @@ def build_workflow(progress, clients):
             await progress.emit(step="guard", status="done", label="Action screened — clear")
             await ctx.send_message(Guarded(p.summary, p.dependency_anchor))
 
-    class Retrieve(Executor):
+    class RetrieverAgent(Executor):
+        """Executor — Foundry IQ agentic retrieval over the decision history."""
+
         def __init__(self) -> None:
             super().__init__(id="retrieve")
 
@@ -146,7 +163,9 @@ def build_workflow(progress, clients):
             )
             await ctx.send_message(Retrieved(g.summary, outcome, g.dependency_anchor))
 
-    class Trace(Executor):
+    class TracerAgent(Executor):
+        """Executor — walks each precedent's decision→outcome links in the graph."""
+
         def __init__(self) -> None:
             super().__init__(id="trace")
 
@@ -164,7 +183,10 @@ def build_workflow(progress, clients):
             await progress.emit(step="trace", status="done", label="Traced outcomes", traces=traces)
             await ctx.send_message(Traced(r.summary, r.outcome, traces, r.dependency_anchor))
 
-    class Lesson(Executor):
+    class LessonAgent(Executor):
+        """Executor + Critic — synthesises one cited principle, then self-verifies
+        it against its sources with Content Safety groundedness before passing on."""
+
         def __init__(self) -> None:
             super().__init__(id="lesson")
 
@@ -202,7 +224,10 @@ def build_workflow(progress, clients):
                          grounding["ungrounded"], t.dependency_anchor)
             )
 
-    class Simulate(Executor):
+    class SimulatorAgent(Executor):
+        """Executor — models three futures with a seeded Monte Carlo and a DoWhy
+        do() intervention; proposes only bounded levers, never authored numbers."""
+
         def __init__(self) -> None:
             super().__init__(id="simulate")
 
@@ -225,8 +250,9 @@ def build_workflow(progress, clients):
                 Simulated(ls.summary, ls.outcome, ls.lesson, ls.grounded_pct, ls.ungrounded, sim)
             )
 
-    class Decide(Executor):
-        """Compose trust, then pause for human approval (the HITL gate)."""
+    class DecisionAgent(Executor):
+        """Planner / HITL — composes the trust score from the upstream agents'
+        signals, then pauses the whole team for a human to approve or override."""
 
         def __init__(self) -> None:
             super().__init__(id="decide")
@@ -267,11 +293,14 @@ def build_workflow(progress, clients):
             await progress.emit(step="done", status="done", label=f"Human decision: {verdict}")
             await ctx.yield_output(verdict)
 
+    # The agent team. Each is a single-responsibility reasoning agent; the edges
+    # are the hand-offs along which they collaborate.
     guard, retrieve, trace, lesson, sim, decide = (
-        Guard(), Retrieve(), Trace(), Lesson(), Simulate(), Decide()
+        GuardAgent(), RetrieverAgent(), TracerAgent(),
+        LessonAgent(), SimulatorAgent(), DecisionAgent(),
     )
     return (
-        WorkflowBuilder(start_executor=guard, name="janus-spine")
+        WorkflowBuilder(start_executor=guard, name="janus-agents")
         .add_edge(guard, retrieve)
         .add_edge(retrieve, trace)
         .add_edge(trace, lesson)
