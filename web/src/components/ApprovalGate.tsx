@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { FutureBand } from "@/lib/stream";
 import { cn } from "@/lib/cn";
+import { tidyLesson } from "@/lib/lesson";
 
 // The human-in-the-loop gate. JANUS never executes — it recommends, and a person
 // decides. The verdict and its justification come from the run itself: the
@@ -40,9 +41,10 @@ export function ApprovalGate({
   const [decision, setDecision] = useState<Decision>(null);
   const meta = VERDICT_META[recommended] ?? VERDICT_META.review;
   const rec = futures?.find((f) => f.label === recommended);
-  // The justification is the grounded lesson (first sentence) plus the recommended
-  // future's own modelled median — both produced by the run, not authored here.
-  const lessonLead = lesson?.split(/(?<=\.)\s/)[0] ?? "";
+  // The justification is the grounded lesson (first sentence, cleaned of markdown
+  // and prompt-echo) plus the recommended future's own modelled median — both
+  // produced by the run, not authored here.
+  const lessonLead = lesson ? tidyLesson(lesson).split(/(?<=\.)\s/)[0] : "";
 
   // When the workflow is paused server-side (awaiting), the buttons resume the
   // real run over the wire; the decision is resolved by the backend, not faked

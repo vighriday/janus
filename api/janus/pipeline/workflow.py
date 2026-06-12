@@ -173,10 +173,13 @@ def build_workflow(progress, clients):
             await progress.emit(step="lesson", status="running", label="Extracting a grounded lesson")
             sources = [f"[ref_id:{p.ref_id}] {p.title}\n{p.content}" for p in t.outcome.precedents]
             prompt = (
-                "From these past decision records, state ONE principle that applies to the "
-                "proposed action. Cite the ref_id of every record you rely on. If unsupported, "
-                f"reply 'INSUFFICIENT EVIDENCE'.\n\nProposed action: {t.summary}\n\n"
-                + "\n\n".join(sources)
+                "From these past decision records, write a single principle (one or two "
+                "sentences) that applies to the proposed action. State it directly — do "
+                "NOT begin with 'One principle' or 'The principle is'. Cite every record "
+                "you rely on inline, in the exact form [ref_id:N] right after the claim it "
+                "supports; do NOT list the ref_ids at the end. If the records do not "
+                f"support a principle, reply exactly 'INSUFFICIENT EVIDENCE'.\n\n"
+                f"Proposed action: {t.summary}\n\n" + "\n\n".join(sources)
             )
             lesson = await llm.chat_complete([{"role": "user", "content": prompt}])
             if lesson.strip().upper().startswith("INSUFFICIENT"):
@@ -231,12 +234,13 @@ def build_workflow(progress, clients):
         @handler
         async def run(self, s: Simulated, ctx: WorkflowContext[None]) -> None:
             await progress.emit(step="trust", status="running", label="Composing the trust score")
-            trust = _compose_trust(s)
+            trust, components = _compose_trust(s)
             cfg = get_settings()
             await progress.emit(
                 step="trust", status="done", label=f"Trust {int(trust * 100)}/100",
                 trust=trust, floor=cfg.trust_floor,
                 state="ok" if trust >= cfg.trust_floor else "weak_evidence",
+                components=components,
                 weights={
                     "retrieval": cfg.trust_weight_retrieval,
                     "grounding": cfg.trust_weight_grounding,
@@ -277,7 +281,8 @@ def build_workflow(progress, clients):
     )
 
 
-def _compose_trust(s: Simulated) -> float:
+def _compose_trust(s: Simulated) -> tuple[float, dict]:
+    """Return the composed trust score and the three component signals behind it."""
     cfg = get_settings()
     top = max((p.reranker_score or 0.0) for p in s.outcome.precedents)
     floor = float(cfg.reranker_threshold)
@@ -296,7 +301,14 @@ def _compose_trust(s: Simulated) -> float:
         + cfg.trust_weight_decisiveness * decisiveness,
         2,
     )
-    return min(trust, cfg.trust_floor) if s.ungrounded else trust
+    if s.ungrounded:
+        trust = min(trust, cfg.trust_floor)
+    components = {
+        "retrieval": round(retrieval, 2),
+        "grounding": round(grounding, 2),
+        "decisiveness": round(decisiveness, 2),
+    }
+    return trust, components
 
 
 # Clients are built once and shared (each holds a credential + an httpx client).

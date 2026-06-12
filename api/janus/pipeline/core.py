@@ -138,9 +138,12 @@ async def run_janus_pipeline(action: ProposedAction) -> AsyncIterator[str]:
     yield _ev(3, StepKind.lesson, StepStatus.running, "Extracting a grounded lesson")
     sources = [f"[ref_id:{p.ref_id}] {p.title}\n{p.content}" for p in outcome.precedents]
     lesson_prompt = (
-        "From these past decision records, state ONE principle that applies to the "
-        "proposed action. Cite the ref_id of every record you rely on. If the records "
-        "do not support a principle, reply exactly 'INSUFFICIENT EVIDENCE'.\n\n"
+        "From these past decision records, write a single principle (one or two "
+        "sentences) that applies to the proposed action. State the principle "
+        "directly — do NOT begin with 'One principle' or 'The principle is'. Cite "
+        "every record you rely on inline, in the exact form [ref_id:N] placed right "
+        "after the claim it supports. Do NOT list the ref_ids at the end. If the "
+        "records do not support a principle, reply exactly 'INSUFFICIENT EVIDENCE'.\n\n"
         f"Proposed action: {action.summary}\n\nRecords:\n" + "\n\n".join(sources)
     )
     try:

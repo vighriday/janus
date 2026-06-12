@@ -4,21 +4,12 @@ import { Fragment } from "react";
 import type { Precedent } from "@/lib/stream";
 import { cn } from "@/lib/cn";
 
+import { tidyLesson } from "@/lib/lesson";
+
 // The lesson text cites sources inline as [ref_id:N]. Split on those markers so
 // each one renders as a citation chip the reader can click to surface the
 // precedent it rests on.
 const CITE = /\[ref_id:(\d+)\]/g;
-
-// The model sometimes wraps emphasis in markdown (**bold**, *italic*); the panel
-// renders plain text, so strip the markers rather than show them literally. The
-// final pass removes any orphan markers left when an emphasis span straddles a
-// citation marker, so a stray asterisk never reaches the screen.
-function stripEmphasis(s: string): string {
-  return s
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "$1")
-    .replace(/\*+/g, "");
-}
 
 export function LessonPanel({
   lesson,
@@ -32,7 +23,7 @@ export function LessonPanel({
   onCite: (ref: number | null) => void;
 }) {
   const byRef = new Map(precedents.map((p) => [p.ref_id, p]));
-  const clean = stripEmphasis(lesson);
+  const clean = tidyLesson(lesson);
   const parts: Array<string | number> = [];
   let last = 0;
   for (const m of clean.matchAll(CITE)) {
