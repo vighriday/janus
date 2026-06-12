@@ -1,14 +1,14 @@
 {
   "dataset": "groundedness_cases.jsonl",
-  "case_count": 5,
+  "case_count": 22,
   "metrics": {
-    "groundedness.groundedness": 4.2,
-    "groundedness.groundedness_score": 4.2,
+    "groundedness.groundedness": 4.681818181818182,
+    "groundedness.groundedness_score": 4.681818181818182,
     "groundedness.groundedness_passed": 1.0,
-    "relevance.relevance": 4.4,
-    "relevance.relevance_score": 4.4,
-    "relevance.relevance_passed": 1.0,
+    "relevance.relevance": 4.363636363636363,
+    "relevance.relevance_score": 4.363636363636363,
+    "relevance.relevance_passed": 0.9090909090909091,
     "groundedness.binary_aggregate": 1.0,
-    "relevance.binary_aggregate": 1.0
+    "relevance.binary_aggregate": 0.91
   }
 }

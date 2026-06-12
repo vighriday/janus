@@ -125,3 +125,40 @@ retrieval and the safety spine.
 - Re-checked the frontend stack against the current field before building:
   React Flow and the rest held; the one charting alternative worth considering
   was unmaintained, so it was a non-starter.
+
+### Hardening pass — 2026-06-12
+
+A full pass over the build against the judging rubric, fixing the gaps between
+what the docs claimed and what the code did, and closing the remaining
+reliability and presentation holes.
+
+- Reconciled every doc to the build and trimmed the unused dependencies — the
+  charting library, AI Elements, SALib, Ragas, DeepEval and a red-team package
+  that were never wired. Folded the policy constants (the concentration knee, the
+  trust weights and floor) into config so they are not magic numbers scattered
+  across the code and the console.
+- Wired OpenTelemetry for real: a dual sink to a local Phoenix collector and
+  Azure Monitor, both optional, with the OpenAI client auto-instrumented.
+- Made the deploy real. Added the Bicep and `azure.yaml` so `azd up` provisions a
+  Container Apps environment for both services behind a user-assigned managed
+  identity with the keyless data-plane roles, Key Vault, and Application Insights,
+  plus the two Dockerfiles. Converted the architecture diagram to Mermaid.
+- Surfaced the two beats that were computed and thrown away at the UI: the
+  subqueries Foundry IQ planned (and fixed the parser, which read the old
+  searchIndex activity shape rather than the azureBlob one the blob source emits)
+  and the DoWhy do() causal contrast. Drove the approval rationale, the trust
+  weights and the knee from the run payload instead of hardcoding them.
+- Made the human gate real. The console now runs the Microsoft Agent Framework
+  workflow path, which pauses at `request_info`; a server-side run registry holds
+  the paused workflow under a run id and the gate resumes it over a second
+  request — the workflow-state-across-the-approval-round-trip the architecture
+  calls its number-one risk, now solved, with idempotent double-click handling.
+  Hardened the path: off-loop retrieval, cached clients, bounded model output and
+  timeout, and a terminal error frame instead of a dropped stream.
+- Accessibility pass to an AA bar: keyboard focus and ARIA on the citation chips
+  and the SVG charts, a focus ring, a reduced-motion query, a labelled slider,
+  risk shown as text and not colour alone, a real error state, and a favicon.
+- Expanded the eval scorecard to 22 cases including the abstain/negative ones
+  (groundedness ~4.7/5, relevance ~4.4/5) and added a committed red-team probe
+  that fires direct and indirect/XPIA injections at the Prompt Shields and records
+  the block rate — measured safety, not asserted.

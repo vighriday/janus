@@ -116,7 +116,7 @@ a hard requirement.
 |-------------|--------|--------------------|
 | Accuracy & Relevance | 20% | Real Foundry IQ integration, grounded answers, meets the track |
 | Reasoning & Multi-step | 20% | Visible six-step pipeline: query decomposition, graph traversal, a seeded simulation, and a DoWhy `do()` causal contrast |
-| Reliability & Safety | 20% | Grounding gate, abstention, direct + indirect injection screening, HITL gate, a committed offline eval scorecard |
+| Reliability & Safety | 20% | Grounding gate, abstention, direct + indirect injection screening, a real HITL pause-and-resume, a committed 22-case eval scorecard, and a red-team ASR probe |
 | Creativity & Originality | 15% | Interception (not retrieval); the live input-change beat |
 | UX & Presentation | 15% | One clean console; reasoning shown as it happens |
 | Community vote | 10% | A 20-second "agent avoids repeating a $3M mistake" teaser posted early |

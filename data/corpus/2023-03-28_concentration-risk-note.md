@@ -8,6 +8,7 @@ team: IT
 tags: [vendor, consolidation, resilience, risk, dependency]
 synthetic: true
 company: Northwind Logistics (fictional)
+related: [NW-2023-0312]
 ---
 
 # Concentration Risk — Carrier Software Consolidation onto Tessell

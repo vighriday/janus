@@ -76,7 +76,7 @@ probabilistic simulation, groundedness reasoning-mode, a red-team ASR artifact.
 | Decision graph ‡ | NetworkX in-process `DiGraph` loaded from corpus frontmatter; precedents joined by `doc_id`, outcomes traversed by BFS | `networkx>=3.4` | Neo4j/Memgraph — a graph server earns nothing at ~19 nodes; pure setup friction + a demo-failure surface. Kuzu archived Oct 2025. A `GraphStore` seam keeps a server swap one class away. |
 | Simulation ‡ | LLM emits bounded levers only (Pydantic schema) + seeded NumPy Monte Carlo, SciPy triangular; thin **DoWhy GCM** for a literal `do()` counterfactual contrast | NumPy 2.x, SciPy 1.15, DoWhy 0.14 | PyMC Bayesian is roadmap. (SALib Sobol was considered for an offline sensitivity panel and cut to keep the live path lean.) |
 | Frontend | Next.js 15 (App Router) + Tailwind v4 + React Flow 12 (`@xyflow/react`); charts and gauges are hand-built SVG; SSE transport | `@xyflow/react` 12.8.6, Next 15.5.19 | A charting library (Recharts/Tremor) was dropped: hand-drawn SVG renders a range that crosses zero, which a stacked bar can't, and removes a dependency. Tremor is React-18-only/unmaintained — non-starter. |
-| Safety + eval | Content Safety Groundedness Detection + Prompt Shields (direct + indirect/XPIA); offline scorecard via **azure-ai-evaluation** (Groundedness + Relevance judges) | `azure-ai-evaluation>=1.17` | The offline judge is the same Content-Safety-aligned groundedness, so the scorecard predicts live behaviour. Red-teaming (AI Red Teaming Agent / PyRIT) is roadmap — it needs a cloud Foundry project and risks a dependency clash with the agent stack. |
+| Safety + eval | Content Safety Groundedness Detection + Prompt Shields (direct + indirect/XPIA); offline scorecard via **azure-ai-evaluation** (Groundedness + Relevance, 22 cases) + a committed red-team ASR probe against the shields | `azure-ai-evaluation>=1.17` | The offline judge is the same Content-Safety-aligned groundedness, so the scorecard predicts live behaviour. The red-team probe is local and Azure-native; the cloud AI Red Teaming Agent (PyRIT) is roadmap — it needs a cloud Foundry project and risks a dependency clash. |
 | Backend / infra | FastAPI + Pydantic v2 + uv; `azd` → Container Apps hosting **both** services; Key Vault + user-assigned managed identity; Bicep IaC | FastAPI 0.115+, uv | Static Web Apps dropped — hosting the console as a second container app means one deploy target, one identity model, and no Vercel-ToS question |
 | Observability | OpenTelemetry, dual sink: **Arize Phoenix** (local, on-camera trace UI) + **Azure Monitor / App Insights** (production), OpenAI auto-instrumented via OpenInference | `opentelemetry-sdk`, `openinference-instrumentation-openai`, `azure-monitor-opentelemetry-exporter` | App Insights alone has 1–3 min ingestion lag — too slow to show live; Phoenix is the on-camera view, App Insights the production sink. Both sinks are optional: no collector configured → spans recorded, nothing shipped. |
 
@@ -147,10 +147,12 @@ a model-deprecation issue — see §3a). Prompt Shields screen both the action a
 the retrieved docs (direct + indirect/XPIA). The offline azure-ai-evaluation
 harness uses the *same* Content-Safety-aligned groundedness, so the committed
 scorecard and the live gate measure the same thing — no drift between eval and
-production. A red-team attack-success-rate artifact (AI Red Teaming Agent / PyRIT)
-is roadmap — a guardrail that hasn't been attacked is a red flag, so it's on the
-plan, but it needs a cloud Foundry project and risks a dependency clash with the
-agent stack, so it isn't on the live path yet.
+production. A guardrail that hasn't been attacked is a red flag, so a committed
+red-team probe (`janus.scripts.red_team`) fires direct and indirect/XPIA
+injections at the Prompt Shields and records the block rate, with clean inputs to
+catch over-blocking. The broader cloud AI Red Teaming Agent (PyRIT) is roadmap —
+it needs a cloud Foundry project and risks a dependency clash with the agent
+stack, so the local probe is the committed evidence for now.
 
 **Infra — Microsoft-native and demo-proof.** FastAPI is the framework in
 Microsoft's own Foundry Agent Service Python samples; its OpenAPI surface is how
@@ -240,8 +242,13 @@ either one alone. The build must respect all of them.
 - **Never executes.** JANUS has no execution capability by construction — it emits
   a recommendation to a human. "Never auto-executes" is structural, not a flag.
 - **Demo-day resilience.** Record on localhost; `min-replicas=1` so the in-memory
-  workflow survives the approval round-trip; the eval scorecard is committed so the
-  reliability evidence exists even if a live run is flaky.
+  workflow survives the approval round-trip; the eval scorecard (22 cases) and the
+  red-team ASR artifact are committed so the reliability evidence exists even if a
+  live run is flaky.
+- **Measured against attack.** A committed red-team probe (`data/eval/redteam.json`)
+  fires direct and indirect/XPIA injections at the Prompt Shields and records the
+  block rate, with clean inputs to check for over-blocking — so the safety claim
+  is measured, not asserted.
 
 **Roadmap (designed, not yet built):**
 
@@ -253,7 +260,8 @@ either one alone. The build must respect all of them.
   badging of superseded principles (needs the typed-edge taxonomy above).
 - **Captured-fixture replay.** A committed real-response fixture per external call
   so the demo can run fully offline.
-- **Red-team ASR artifact.** A committed attack-success-rate scorecard.
+- **Cloud red-teaming.** The Azure AI Red Teaming Agent (PyRIT) for a broader,
+  automated attack sweep — the local probe is the committed evidence today.
 
 ## 6. Risk register (load-bearing first)
 
